@@ -1,0 +1,9 @@
+# Normalise text files to LF in the repository.
+* text=auto
+# Files run or parsed by Linux (WSL, Docker, the NAS, GitHub Actions) keep LF even in a
+# Windows checkout with core.autocrlf=true; a CRLF shebang breaks with "bash\r".
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+.dockerignore text eol=lf
