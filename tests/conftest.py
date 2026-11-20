@@ -46,3 +46,16 @@ def dst_dir(tmp_path_factory):
     make_demo_data.make_night(out, datetime(2026, 11, 12, 23, 50), seed=1001,
                               ring_ahead_s=-3600)
     return out
+
+
+@pytest.fixture(scope="session")
+def drift_dir(tmp_path_factory):
+    """Missed DST plus 32 min of accumulated drift (CPAP 1 h 32 min ahead)."""
+    from datetime import datetime
+
+    import make_demo_data
+
+    out = tmp_path_factory.mktemp("drift")
+    make_demo_data.make_night(out, datetime(2026, 11, 13, 0, 22), seed=1002,
+                              ring_ahead_s=-(3600 + 32 * 60))
+    return out

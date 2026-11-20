@@ -11,7 +11,7 @@ time. A machine still on summer time after the fall-back -> offset -3600.
 Primary method - mask on/off vs. ring motion
     Every BRP file starts when the mask goes on and ends when it comes off; both
     involve hand movement the ring records. We slide the ring's motion trace by up to
-    +/-10 min around 0 and around +/-1 h (DST) and pick the shift that lands the most
+    +/-2 h (drift plus a possible 1 h DST error) and pick the shift that lands the most
     motion energy right on those instants. Mid-night mask-off/on pairs are the sharpest
     markers because the rest of the night is still.
 
@@ -28,8 +28,9 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 
-SEARCH_S = 600  # +/- 10 minutes around each centre
-SEARCH_CENTRES = (0, 3600, -3600)  # no error, and a missed DST change either way
+# AirSense 11 units have been reported drifting by tens of minutes over months (they
+# never resync), on top of a possible 1 h DST error, so search one continuous range.
+SEARCH_S = 7200  # +/- 2 hours
 MARKER_WIN_S = 6  # motion within +/- this many seconds of a marker counts
 EXPECTED_DESAT_LAG_S = 30.0  # typical apnea-end -> finger SpO2 nadir delay
 APNEA_KINDS = {"Obstructive apnea", "Central apnea", "Apnea", "Hypopnea"}
@@ -59,7 +60,7 @@ def motion_offset(markers: list[datetime], oxi: pd.DataFrame) -> dict | None:
     base_idx = int(mot.index[0])
     m_sec = np.array([(m - t0).total_seconds() for m in markers])
 
-    lags = np.concatenate([np.arange(c - SEARCH_S, c + SEARCH_S + 1) for c in SEARCH_CENTRES])
+    lags = np.arange(-SEARCH_S, SEARCH_S + 1)
     scores = np.zeros(len(lags))
     hits = np.zeros(len(lags), dtype=int)
     for k, off in enumerate(lags):
@@ -160,12 +161,12 @@ def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
             out["desat_agrees"] = bool(agree)
             if not agree and out["confidence"] == "high":
                 out["confidence"] = "medium"
-    elif de and de.get("usable") and abs(de["residual_s"]) <= SEARCH_S:
+    elif de and de.get("usable") and abs(de["residual_s"]) <= 600:
         out["suggested_offset_s"] = _snap(current_offset + de["residual_s"])
         out["confidence"] = "low"
     if "suggested_offset_s" in out:
         out["needs_change"] = abs(out["suggested_offset_s"] - current_offset) >= 4
-        out["dst_suspected"] = abs(abs(out["suggested_offset_s"]) - 3600) <= SEARCH_S
+        out["dst_suspected"] = abs(abs(out["suggested_offset_s"]) - 3600) <= 600
     return out
 
 

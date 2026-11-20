@@ -80,3 +80,9 @@ def test_cpap_only_night_inherits_correction(tmp_path):
         assert "Auto-corrected" in page1
         for r in res:
             c.delete(f"/api/nights/{r['id']}")
+
+
+def test_detects_large_drift_plus_dst(drift_dir):
+    r = analyze(_files(drift_dir), ProcessOptions(auto_sync=True))
+    assert abs(r["offset_used"] - (-(3600 + 32 * 60))) <= 4
+    assert not r["sync"]["dst_suspected"]  # 1 h 32 min is not a clean DST hour
