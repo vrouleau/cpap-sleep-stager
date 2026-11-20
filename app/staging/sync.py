@@ -176,8 +176,13 @@ def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
     for s in segments:
         markers += [s.start, s.end]
     end = end_offset(segments, oxi)
-    hour = round(end / 3600) * 3600 if end is not None else None
-    anchored = end is not None and abs(end - hour) <= ANCHOR_TOL_S and abs(hour) <= 3600
+    # The whole hour is about the machine's clock, so judge it on the full correction
+    # (current + what the morning shows), not on the residual: otherwise a night already
+    # nudged to e.g. +58:32 would anchor to "+0 from here" and keep chasing itself.
+    hour_abs = round((current_offset + end) / 3600) * 3600 if end is not None else None
+    anchored = end is not None and abs(current_offset + end - hour_abs) <= ANCHOR_TOL_S \
+        and abs(hour_abs) <= 3600
+    hour = hour_abs - current_offset if anchored else None  # residual to reach that hour
     if anchored:
         mo = motion_offset(markers, oxi, centre=-hour, span=ANCHORED_SPAN_S)
     else:
@@ -200,7 +205,7 @@ def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
     out: dict = {"current_offset_s": current_offset, "motion": mo, "desat": de}
     if end is not None:
         out["morning_end_s"] = round(end, 1)
-        out["anchored_hour_s"] = hour if anchored else None
+        out["anchored_hour_s"] = hour_abs if anchored else None  # full correction
     if mo:
         out["suggested_offset_s"] = _snap(current_offset + mo["residual_s"])
         out["confidence"] = mo["confidence"]

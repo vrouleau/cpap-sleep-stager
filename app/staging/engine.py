@@ -29,6 +29,9 @@ DEFAULTS = {
     "wake_hr_fraction": 0.7,  # HR cut between NREM-HR (0) and movement-wake HR (1)
     "quiet_wake_epochs": 8,  # >= 4 min of aroused signals without movement -> awake
     "motion_wake": 3.0,  # O2Ring motion units summed per epoch
+    "arousal_hr_rise": 5.0,  # a movement is wake if the pulse rises this much (bpm) above
+    "big_motion": 50.0,  # the previous 3 min, if it is this big (rolling over), or if it
+    #                      lasts more than one epoch; otherwise it is a twitch / arousal
     "min_rem_latency_min": 45,
     "sleep_onset_min": 5,
     "min_rem_bout_epochs": 3,
@@ -186,6 +189,16 @@ def stage(epochs: pd.DataFrame, params: dict | None = None,
     moving = motion > p["motion_wake"]
     # movement in the neighbouring epochs also suggests arousal
     moving_near = moving.rolling(3, center=True, min_periods=1).max().astype(bool)
+    # A movement on its own is not wake: a twitch or a position change in sleep is an
+    # arousal at most (an epoch is wake only if awake for most of it). It counts as wake
+    # when the pulse jumps, the movement is big, or it carries on into the next epoch.
+    moving_wake = moving
+    if has_oxi:
+        hr_prev = df["hr"].shift(1).rolling(6, min_periods=2).median()
+        rise = (df["hr"].rolling(3, center=True, min_periods=1).max() - hr_prev).fillna(0)
+        sustained = moving & (moving.shift(1, fill_value=False) | moving.shift(-1, fill_value=False))
+        moving_wake = moving & ((rise >= p["arousal_hr_rise"]) | (motion >= p["big_motion"])
+                                | sustained)
 
     labels = np.full(len(df), NREM, dtype=object)
     no_data = df[["flow_present", "hr"]].isna().all(axis=1) | (
@@ -206,7 +219,7 @@ def stage(epochs: pd.DataFrame, params: dict | None = None,
     off_awake = mask_off & (~has_oxi | moving_near | (hr > 0.5))
     if has_oxi:
         off_awake |= mask_off & df["hr"].isna()
-    seed = (moving | off_awake).to_numpy()
+    seed = (moving_wake | off_awake).to_numpy()
     aroused = (wake_score > p["wake_threshold"]).to_numpy()
     if has_oxi:
         # Adaptive heart-rate cut: somewhere between this night's NREM-like HR
@@ -249,7 +262,7 @@ def stage(epochs: pd.DataFrame, params: dict | None = None,
         logit[:, 0] += 2.0 * wake[known] + 1.0 * moving_near.to_numpy()[known]
         logit[:, 2] += 0.5 * (rem_score.to_numpy()[known] - p["rem_threshold"]).clip(-2, 2) * has_flow
         labels[known] = np.array([WAKE, NREM, REM], dtype=object)[logit.argmax(axis=1)]
-    labels[moving.to_numpy() | off_awake.to_numpy() | bwake] = WAKE
+    labels[moving_wake.to_numpy() | off_awake.to_numpy() | bwake] = WAKE
 
     # --- sleep onset & final awakening ---
     onset_n = int(p["sleep_onset_min"] * 60 / EPOCH_S)
@@ -270,14 +283,15 @@ def stage(epochs: pd.DataFrame, params: dict | None = None,
         if lb == REM and e - s < p["min_rem_bout_epochs"]:
             labels[s:e] = NREM
     for s, e, lb in list(_runs(labels)):
-        if lb == WAKE and e - s == 1 and 0 < s < len(labels) - 1 and not moving.iloc[s] \
+        if lb == WAKE and e - s == 1 and 0 < s < len(labels) - 1 and not moving_wake.iloc[s] \
                 and not mask_off.iloc[s] and labels[s - 1] == labels[e]:
             labels[s] = labels[s - 1]
 
     df["stage"] = labels
     df.loc[no_data.to_numpy(), "stage"] = WAKE
     # deep-sleep flag inside NREM: 1/0 with the ring, NaN (unknown) without it
-    df["deep"] = _deep(df, df["stage"].to_numpy(), moving.to_numpy(), p).astype(float)         if has_oxi else np.nan
+    df["deep"] = (_deep(df, df["stage"].to_numpy(), moving.to_numpy(), p).astype(float)
+                  if has_oxi else np.nan)
     df["wake_score"] = wake_score.round(3)
     df["rem_score"] = rem_score.round(3)
     df["no_data"] = no_data.to_numpy()

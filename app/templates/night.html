@@ -77,7 +77,7 @@
       <p class="muted small">
         {% if sy.morning_end_s is defined and sy.morning_end_s is not none %}Morning: the ring's last reading came
           {{ (sy.morning_end_s|abs / 60)|round|int }} min {{ 'after' if sy.morning_end_s >= 0 else 'before' }} the mask came off
-          {%- if sy.anchored_hour_s is not none %}, which points to {{ 'no clock error' if sy.anchored_hour_s == 0 else (sy.anchored_hour_s|offset) }}{% endif %}.{% endif %}
+          {%- if sy.anchored_hour_s is not none %}, which points to {{ 'no clock error' if sy.anchored_hour_s == 0 else ('a correction of ' ~ (sy.anchored_hour_s|offset)) }}{% endif %}.{% endif %}
         {% if sy.motion %}Mask on/off vs. ring motion: {{ sy.motion.markers_matched }}/{{ sy.motion.markers }} markers matched, {{ sy.motion.prominence }}× stronger than the next-best shift.{% endif %}
         {% if sy.desat and sy.desat.usable %} SpO₂ check: average nadir {{ sy.desat.nadir_lag_s|int }} s after event end over {{ sy.desat.events_used }} events
           (expect ~30 s){% if sy.desat_agrees is defined %}: {{ 'agrees' if sy.desat_agrees else 'disagrees, so check manually' }}{% endif %}.{% endif %}

@@ -19,7 +19,7 @@ For each 30-second epoch it computes features over a 2-minute window, then stage
 
 * **NREM**: metronomic breathing, low and steady pulse, no movement.
 * **REM**: irregular breathing (rate *and* depth), more variable pulse, but no movement (atonia). It is suppressed in the first 45 min after sleep onset.
-* **Awake**: seeded by movement or mask removal, then grown into neighbouring epochs whose pulse is above an **adaptive cut** that lies between *this night's* NREM pulse and its movement-confirmed wake pulse. Stretches of 4 minutes or more above the cut count as awake even without movement (lying awake quietly).
+* **Awake**: seeded by movement that means waking (the pulse jumps 5+ bpm, the movement is big, or it lasts more than one epoch; a lone twitch or small position change is not wake) or by mask removal, then grown into neighbouring epochs whose pulse is above an **adaptive cut** that lies between *this night's* NREM pulse and its movement-confirmed wake pulse. Stretches of 4 minutes or more above the cut count as awake even without movement (lying awake quietly).
 
 All thresholds are relative to the night itself (robust z-scores), so the rules adapt to you. It also works with only one source, though less accurately: CPAP-only cannot really separate quiet wake from REM, and O2Ring-only has no breathing data.
 

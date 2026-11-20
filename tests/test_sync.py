@@ -131,3 +131,11 @@ def test_morning_end_anchors_missed_dst():
     assert out["anchored_hour_s"] == 3600
     assert abs(out["suggested_offset_s"] - true_off) <= 8
     assert out["confidence"] == "high" and out["dst_suspected"]
+    # already nudged to +58:32 (e.g. an earlier suggestion was applied): still anchored
+    # to the full +1 h, and it does not wander off by another minute
+    cur = 3512.0
+    moved = [FlowSegment(source="x", start=s_.start + timedelta(seconds=cur), fs=25, flow=s_.flow)
+             for s_ in segs]
+    out = sync.estimate(moved, [], ring, cur)
+    assert out["anchored_hour_s"] == 3600
+    assert abs(out["suggested_offset_s"] - true_off) <= 8

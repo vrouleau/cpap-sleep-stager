@@ -79,3 +79,21 @@ def test_deep_sleep_estimate_needs_ring():
     assert not deep[out["stage"].to_numpy() != "NREM"].any()
     # CPAP only: no estimate
     assert stage(_cpap_night(rng, spans))["deep"].isna().all()
+
+
+def test_twitch_is_not_wake():
+    """A small movement with no pulse change is a twitch (stays asleep); the same
+    movement with a pulse jump, or a big one, is a brief awakening."""
+    rng = np.random.default_rng(5)
+    df = _cpap_night(rng, [("N", 600)])
+    df["hr"] = 56 + rng.normal(0, 0.8, len(df))
+    df["hr_std"], df["spo2"], df["motion"] = 1.5, 95.0, 0.0
+    twitches, jumps, rolls = [100, 180, 260], [340], [450]
+    df.loc[twitches + jumps, "motion"] = 5.0
+    df.loc[rolls, "motion"] = 90.0
+    hr = df["hr"].to_numpy().copy()
+    hr[jumps[0]:jumps[0] + 2] += 9
+    df["hr"] = hr
+    st = stage(df)["stage"]
+    assert (st.iloc[twitches] != "Awake").all()
+    assert (st.iloc[jumps + rolls] == "Awake").all()
