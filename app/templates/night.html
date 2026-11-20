@@ -57,6 +57,10 @@
         <p>⏰ About one hour off: the machine most likely missed the daylight-saving change.
            ResMed machines never adjust for DST.</p>
       {% endif %}
+      {% if sy.timezone_suspected %}
+        <p>✈️ Several hours apart: the CPAP is probably still on your home time zone (e.g. travelling).
+           The timeline uses the O2Ring's local time.</p>
+      {% endif %}
       {% if sy.needs_change %}
         <p>The CPAP clock looks <b>{{ (sy.suggested_offset_s - n.cpap_offset_s)|offset }}</b> off from the O2Ring.
            Suggested correction: <b>{{ sy.suggested_offset_s|offset }}</b> (currently {{ n.cpap_offset_s|offset }}).</p>

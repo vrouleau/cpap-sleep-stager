@@ -45,11 +45,25 @@ def _ring_seconds(oxi: pd.DataFrame, t0: datetime, col: str) -> pd.Series:
     return ser
 
 
-def motion_offset(markers: list[datetime], oxi: pd.DataFrame) -> dict | None:
+def coarse_shift(segments, oxi: pd.DataFrame) -> float:
+    """Rough ring-vs-CPAP clock difference (ring shift convention, seconds) from when
+    each device's recording starts and ends. Only meaningful for big gaps such as
+    travelling across time zones; returns 0 when the clocks are already within 2 h."""
+    ring0 = oxi["time"].iloc[0].to_pydatetime()
+    ring1 = oxi["time"].iloc[-1].to_pydatetime()
+    d0 = (segments[0].start - ring0).total_seconds()
+    d1 = (max(s.end for s in segments) - ring1).total_seconds()
+    c = float(np.median([d0, d1]))
+    return c if abs(c) > SEARCH_S else 0.0
+
+
+def motion_offset(markers: list[datetime], oxi: pd.DataFrame,
+                  centre: float = 0.0) -> dict | None:
     """Residual offset from mask on/off markers (machine clock) vs ring motion."""
     if not markers or "motion" not in oxi or oxi["motion"].fillna(0).sum() == 0:
         return None
-    t0 = min(min(markers), oxi["time"].iloc[0].to_pydatetime())
+    t0 = min(min(markers) - timedelta(seconds=abs(centre) + SEARCH_S),
+             oxi["time"].iloc[0].to_pydatetime())
     mot = _ring_seconds(oxi, t0, "motion").ffill(limit=4).fillna(0.0)
     if mot.empty:
         return None
@@ -60,7 +74,7 @@ def motion_offset(markers: list[datetime], oxi: pd.DataFrame) -> dict | None:
     base_idx = int(mot.index[0])
     m_sec = np.array([(m - t0).total_seconds() for m in markers])
 
-    lags = np.arange(-SEARCH_S, SEARCH_S + 1)
+    lags = int(round(centre)) + np.arange(-SEARCH_S, SEARCH_S + 1)
     scores = np.zeros(len(lags))
     hits = np.zeros(len(lags), dtype=int)
     for k, off in enumerate(lags):
@@ -142,7 +156,8 @@ def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
     markers = []
     for s in segments:
         markers += [s.start, s.end]
-    mo = motion_offset(markers, oxi)
+    centre = coarse_shift(segments, oxi)
+    mo = motion_offset(markers, oxi, centre)
     if mo:
         mo["residual_s"] = -mo["residual_s"]  # ring shift -> CPAP correction
     # Cross-check SpO2 *at the motion-based alignment* (an hour-off clock would hide
@@ -166,7 +181,9 @@ def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
         out["confidence"] = "low"
     if "suggested_offset_s" in out:
         out["needs_change"] = abs(out["suggested_offset_s"] - current_offset) >= 4
-        out["dst_suspected"] = abs(abs(out["suggested_offset_s"]) - 3600) <= 600
+        off = abs(out["suggested_offset_s"])
+        out["dst_suspected"] = abs(off - 3600) <= 600
+        out["timezone_suspected"] = off >= 5400  # e.g. CPAP left on home time abroad
     return out
 
 

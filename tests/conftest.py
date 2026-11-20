@@ -59,3 +59,17 @@ def drift_dir(tmp_path_factory):
     make_demo_data.make_night(out, datetime(2026, 11, 13, 0, 22), seed=1002,
                               ring_ahead_s=-(3600 + 32 * 60))
     return out
+
+
+@pytest.fixture(scope="session")
+def travel_dir(tmp_path_factory):
+    """Toronto CPAP used in Paris: machine reads 16:50 while the phone-synced ring
+    reads 22:50 local time (ring 6 h ahead), plus a few minutes of drift."""
+    from datetime import datetime
+
+    import make_demo_data
+
+    out = tmp_path_factory.mktemp("travel")
+    make_demo_data.make_night(out, datetime(2026, 11, 12, 16, 50), seed=1003,
+                              ring_ahead_s=6 * 3600 + 190)
+    return out

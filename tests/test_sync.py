@@ -86,3 +86,14 @@ def test_detects_large_drift_plus_dst(drift_dir):
     r = analyze(_files(drift_dir), ProcessOptions(auto_sync=True))
     assert abs(r["offset_used"] - (-(3600 + 32 * 60))) <= 4
     assert not r["sync"]["dst_suspected"]  # 1 h 32 min is not a clean DST hour
+
+
+def test_travel_time_zone(travel_dir):
+    from app.pipeline import group_by_night
+
+    groups = group_by_night(_files(travel_dir))
+    assert len(groups) == 1  # CPAP and ring files still land on the same night
+    r = analyze(_files(travel_dir), ProcessOptions(auto_sync=True))
+    assert abs(r["offset_used"] - (6 * 3600 + 190)) <= 4
+    assert r["sync"]["timezone_suspected"]
+    assert r["epochs"]["t"].iloc[0].hour == 22  # timeline in local (Paris) time
