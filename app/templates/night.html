@@ -19,6 +19,11 @@
         <span class="tag ghost">engine: {{ n.engine }}</span>
         {% if n.notes %}· {{ n.notes }}{% endif %}
       </p>
+      {% if s.trimmed_sessions %}
+      <p class="muted small">Ignored {{ s.trimmed_sessions|length }} short CPAP session{{ 's' if s.trimmed_sessions|length > 1 }}
+        hours away from the night (machine or mask tests):
+        {% for x in s.trimmed_sessions %}{{ x.start[11:16] }} ({{ x.minutes|hm if x.minutes >= 1 else '<1 min' }}){{ ', ' if not loop.last }}{% endfor %}.</p>
+      {% endif %}
     </div>
     <div class="actions">
       <a class="btn ghost" href="/api/nights/{{ n.id }}/epochs.csv">Epochs CSV</a>
@@ -94,7 +99,36 @@
     <span class="lg" data-ev="ua"><span class="sw ua"></span>Apnea (unclassified)</span>
     <span class="lg" data-ev="other"><span class="sw other"></span>RERA/other</span>
     <span class="sw desat"></span>Desat ≥4%
+    {% if n.wake_log.entries %}<span class="sw logged"></span>You: awake{% endif %}
     <label><input type="checkbox" id="toggle-events" checked> Show ResMed events</label></div>
+</section>
+
+{% set wl = n.wake_log %}
+<section class="card" id="wake-log">
+  <div class="head">
+    <div>
+      <h2>Your wake log
+        {% if wl.agreement_pct is not none %}<span class="tag {{ 'good' if wl.agreement_pct >= 80 else 'ghost' }}">app agrees on {{ wl.agreement_pct }}% of it</span>{% endif %}</h2>
+      <p class="muted small">Log the times you remember being awake. The app compares them with its staging
+        (shown as a band on the timeline), which shows how far to trust it and helps tune it.
+        Times before noon count as the next morning.</p>
+    </div>
+    <form method="post" action="/nights/{{ n.id }}/wake-log" class="inline">
+      <label>Awake from <input type="time" name="start" required></label>
+      <label>to <input type="time" name="end" required></label>
+      <button type="submit">Add</button>
+    </form>
+  </div>
+  {% if wl.entries %}
+  <table class="segs">
+    <thead><tr><th>From</th><th>To</th><th>Length</th><th>App staged awake</th><th></th></tr></thead>
+    <tbody>{% for w in wl.entries %}
+      <tr><td>{{ w.start[11:16] }}</td><td>{{ w.end[11:16] }}</td><td>{{ w.minutes|hm }}</td>
+        <td>{% if w.agreement_pct is not none %}{{ w.staged_awake_min|hm }} ({{ w.agreement_pct }}%){% else %}<span class="muted">outside the recording</span>{% endif %}</td>
+        <td><form method="post" action="/nights/{{ n.id }}/wake-log/{{ w.i }}/delete"><button class="linkbtn" type="submit" title="Remove">✕</button></form></td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% endif %}
 </section>
 
 <section class="grid2">

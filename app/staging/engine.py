@@ -32,6 +32,14 @@ DEFAULTS = {
     "min_rem_latency_min": 45,
     "sleep_onset_min": 5,
     "min_rem_bout_epochs": 3,
+    # CPAP-only lying-awake detection (see _breathing_wake)
+    "bw_rate_drop": 0.15,  # breathing rate >= 15 % below this night's sleep rate...
+    "bw_cv_ratio": 1.5,  # ...and breath intervals >= 1.5x as irregular as in sleep
+    "bw_window_epochs": 40,  # judged over a 20-min window
+    "bw_core_frac": 0.6,  # >= 60 % of that window off-baseline seeds a wake period
+    "bw_grow_frac": 0.35,  # a seeded period grows while >= 35 % stays off-baseline
+    "bw_min_core_epochs": 40,  # seeds must last >= 20 min (REM bouts rarely look like this)
+    "bw_bridge_epochs": 30,  # sleep-like gaps <= 15 min inside a wake period are wake too
 }
 
 
@@ -62,6 +70,53 @@ def _runs(labels: np.ndarray):
             j += 1
         yield i, j, labels[i]
         i = j
+
+
+def _breathing_wake(df: pd.DataFrame, seed: np.ndarray, p: dict) -> np.ndarray:
+    """Long lying-awake periods from breathing alone (CPAP without the ring).
+
+    Quietly lying awake with the mask on leaves no movement or mask-off marker, but the
+    breathing settles into a different regime from sleep. On real nights with a known
+    awake period it was ~40 % *slower* than sleep breathing (13 vs 21 /min) and about
+    twice as irregular, for hours, flipping back the moment sleep returned. REM is also
+    irregular but tends to run at or slightly *above* the NREM rate, so the test is
+    "clearly slower than this night's sleep rate, and irregular", sustained >= 20 min.
+
+    The sleep baseline comes from the night's most regular epochs, not its median,
+    because a long awake period can be a big share of the night.
+    """
+    rr, cv = df["resp_rate"], df["breath_cv"]
+    ok = rr.notna() & cv.notna()
+    n = len(df)
+    if ok.sum() < 2 * p["bw_window_epochs"]:
+        return np.zeros(n, dtype=bool)
+    regular = ok & (cv <= cv[ok].quantile(0.3))
+    base_rr, base_cv = rr[regular].median(), cv[regular].median()
+    off = ((rr <= (1 - p["bw_rate_drop"]) * base_rr)
+           & (cv >= p["bw_cv_ratio"] * base_cv)).astype(float).where(ok)
+    w = p["bw_window_epochs"]
+    frac = off.rolling(w, center=True, min_periods=w // 2).mean().fillna(0).to_numpy()
+
+    core = np.zeros(n, dtype=bool)
+    for s_, e_, lb in _runs(frac >= p["bw_core_frac"]):
+        if lb and e_ - s_ >= p["bw_min_core_epochs"]:
+            core[s_:e_] = True
+    if not core.any():
+        return core
+    # grow through weaker evidence, then bridge short sleep-like gaps between wake
+    # stretches (including mask-off / movement seeds) so one awake period stays whole
+    grow = frac >= p["bw_grow_frac"]
+    wake = core.copy()
+    for s_, e_, lb in _runs(grow):
+        if lb and wake[s_:e_].any():
+            wake[s_:e_] = True
+    anchor = wake | seed
+    for s_, e_, lb in _runs(anchor):
+        if not lb and 0 < s_ and e_ < n and e_ - s_ <= p["bw_bridge_epochs"] \
+                and (wake[max(0, s_ - 1)] or wake[min(n - 1, e_)]):
+            wake[s_:e_] = True
+    wake |= anchor & np.convolve(wake, np.ones(3), "same").astype(bool)
+    return wake
 
 
 def stage(epochs: pd.DataFrame, params: dict | None = None,
@@ -130,6 +185,11 @@ def stage(epochs: pd.DataFrame, params: dict | None = None,
         for s_, e_, lb in _runs(aroused):
             if lb and e_ - s_ >= p["quiet_wake_epochs"]:
                 wake[s_:e_] = True
+    bwake = np.zeros(len(df), dtype=bool)
+    if not has_oxi and has_flow:
+        # without the ring, long awake periods can only be read from the breathing
+        bwake = _breathing_wake(df, seed, p)
+        wake |= bwake
     labels[wake] = WAKE
     labels[(rem_score > p["rem_threshold"]).to_numpy() & ~wake & ~moving_near.to_numpy()] = REM
 
@@ -140,7 +200,7 @@ def stage(epochs: pd.DataFrame, params: dict | None = None,
         logit[:, 0] += 2.0 * wake[known] + 1.0 * moving_near.to_numpy()[known]
         logit[:, 2] += 0.5 * (rem_score.to_numpy()[known] - p["rem_threshold"]).clip(-2, 2) * has_flow
         labels[known] = np.array([WAKE, NREM, REM], dtype=object)[logit.argmax(axis=1)]
-    labels[moving.to_numpy() | off_awake.to_numpy()] = WAKE
+    labels[moving.to_numpy() | off_awake.to_numpy() | bwake] = WAKE
 
     # --- sleep onset & final awakening ---
     onset_n = int(p["sleep_onset_min"] * 60 / EPOCH_S)

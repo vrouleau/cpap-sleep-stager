@@ -39,6 +39,20 @@ def test_eve_events(demo_dir):
     assert evs and {e.kind for e in evs} <= {"Hypopnea", "Obstructive apnea"}
 
 
+def test_eve_edf_plus_d(demo_dir, tmp_path):
+    """ResMed writes EVE.edf as EDF+D, which pyedflib refuses; the fallback decoder
+    must return the same events."""
+    src = sorted(demo_dir.rglob("*_EVE.edf"))[0]
+    raw = bytearray(src.read_bytes())
+    assert raw[192:197] == b"EDF+C"
+    raw[192:197] = b"EDF+D"
+    dst = tmp_path / src.name
+    dst.write_bytes(bytes(raw))
+    want = [(e.start, e.kind) for e in read_eve(src)]
+    got = [(e.start, e.kind) for e in read_eve(dst)]
+    assert want and got == want
+
+
 def test_grouping(demo_dir):
     groups = group_by_night(_files(demo_dir))
     assert len(groups) == 1
@@ -85,3 +99,78 @@ def test_api_roundtrip(demo_dir):
         assert r.status_code == 303
         assert c.delete(f"/api/nights/{nid}").status_code == 200
         assert c.get("/api/nights").json() == []
+
+
+def test_wake_log(demo_dir):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    files = [("files", (p.name, p.read_bytes(), "application/octet-stream"))
+             for p in _files(demo_dir)]
+    with TestClient(app) as c:
+        nid = c.post("/api/nights", files=files).json()[0]["id"]
+        # the synthetic night opens with 10-20 min awake from 22:50, so "22:50-23:00"
+        # should mostly agree; times after midnight land on the next morning
+        r = c.post(f"/api/nights/{nid}/wake-log", json={"start": "22:50", "end": "23:00"})
+        assert r.status_code == 200, r.text
+        log = c.post(f"/api/nights/{nid}/wake-log", json={"start": "03:00", "end": "03:20"}).json()
+        assert [e["start"][11:16] for e in log["entries"]] == ["22:50", "03:00"]
+        assert log["entries"][1]["start"].startswith("2026-11-13")
+        assert log["entries"][0]["agreement_pct"] >= 50
+        assert log["logged_min"] == 30
+        assert c.post(f"/api/nights/{nid}/wake-log", json={"start": "04:00", "end": "03:00"}).status_code == 400
+        # survives a re-run, shows on the page
+        c.post(f"/nights/{nid}/reprocess", data={"engine": "heuristic", "offset": "0"})
+        assert len(c.get(f"/api/nights/{nid}").json()["wake_log"]["entries"]) == 2
+        assert "Your wake log" in c.get(f"/nights/{nid}").text
+        assert len(c.delete(f"/api/nights/{nid}/wake-log/0").json()["entries"]) == 1
+        c.delete(f"/api/nights/{nid}")
+
+
+def test_drop_stray_sessions():
+    """Nov 13 on a real card: a 4-min test at 13:31, the night 21:42-05:02 with a 3-min
+    gap, and a 1-min test at 09:41 the next morning."""
+    from datetime import datetime
+
+    from app.ingest.resmed import FlowSegment, RespEvent, ResmedNight, drop_stray_sessions
+
+    def seg(name, start, minutes):
+        return FlowSegment(source=name, start=start, fs=25, flow=np.zeros(int(minutes * 60 * 25)))
+
+    night = ResmedNight(
+        segments=[seg("a", datetime(2026, 11, 13, 13, 31), 4),
+                  seg("b", datetime(2026, 11, 13, 21, 42), 269),
+                  seg("c", datetime(2026, 11, 14, 2, 13), 169),
+                  seg("d", datetime(2026, 11, 14, 9, 41), 1)],
+        events=[RespEvent(start=datetime(2026, 11, 13, 13, 33), duration_s=10, kind="Apnea"),
+                RespEvent(start=datetime(2026, 11, 14, 0, 30), duration_s=10, kind="Apnea")])
+    dropped = drop_stray_sessions(night)
+    assert [d["files"] for d in dropped] == [["a"], ["d"]]
+    assert [s.source for s in night.segments] == ["b", "c"]
+    assert len(night.events) == 1
+    # a long separate block (e.g. a nap) is kept, as is a normal mid-night break
+    nap = ResmedNight(segments=[seg("n", datetime(2026, 11, 13, 14, 0), 60),
+                                seg("b", datetime(2026, 11, 13, 22, 0), 400)])
+    assert drop_stray_sessions(nap) == [] and len(nap.segments) == 2
+
+
+def test_short_night_skipped(tmp_path):
+    """A 10-min machine test with nothing else that night is not imported."""
+    from datetime import datetime
+
+    from fastapi.testclient import TestClient
+
+    import make_demo_data
+    from app.main import app
+
+    start = datetime(2026, 10, 28, 9, 21)
+    p = tmp_path / f"{start:%Y%m%d_%H%M%S}_BRP.edf"
+    t = np.arange(10 * 60 * make_demo_data.FS) / make_demo_data.FS
+    make_demo_data.write_brp(p, start, 0.4 * np.sin(2 * np.pi * t / 4))
+    with TestClient(app) as c:
+        r = c.post("/api/nights", files=[("files", (p.name, p.read_bytes(), "application/octet-stream"))])
+        assert r.status_code == 200, r.text
+        assert r.json()[0]["status"].startswith("skipped (only 10 min")
+        assert "id" not in r.json()[0]
+        assert all(n["night_date"] != "2026-10-27" for n in c.get("/api/nights").json())

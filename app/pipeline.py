@@ -15,7 +15,8 @@ import pandas as pd
 
 from app.db import DATA_DIR, EPOCH_FIELDS, Epoch, Event, Night, SessionLocal
 from app.ingest.o2ring import load_o2ring, looks_like_o2ring
-from app.ingest.resmed import _RESMED_NAME, classify_resmed_file, load_resmed
+from app.ingest.resmed import (_RESMED_NAME, classify_resmed_file, drop_stray_sessions,
+                               load_resmed)
 from app.staging import engine as heuristic
 from app.staging import sleepecg_engine
 from app.staging import sync as clocksync
@@ -116,6 +117,10 @@ def analyze(paths: list[Path], opts: ProcessOptions) -> dict:
             seg.start += shift
         for ev in resmed.events:
             ev.start += shift
+    # machine/mask tests hours away from the night would otherwise read as hours awake
+    trimmed = drop_stray_sessions(resmed) if resmed else []
+    if trimmed:
+        logger.info("Ignoring short CPAP sessions away from the night: %s", trimmed)
     oxi = load_o2ring(csv, dayfirst=opts.dayfirst) if csv else None
 
     epochs = build_epochs(resmed, oxi)
@@ -166,8 +171,21 @@ def analyze(paths: list[Path], opts: ProcessOptions) -> dict:
         "oximetry": oxi.metrics if oxi is not None else None,
         "has_resmed": resmed is not None and bool(resmed.segments),
         "has_o2ring": oxi is not None,
-        "engine": engine_used,
+        "engine": engine_used,        "trimmed": trimmed,
+        "recorded_min": _recorded_min(resmed, oxi),
     }
+
+
+MIN_NIGHT_MIN = 60  # less recording than this is a machine / mask test, not a night
+
+
+def _recorded_min(resmed, oxi) -> float:
+    if resmed is not None and resmed.segments:
+        return sum((s.end - s.start).total_seconds() for s in resmed.segments) / 60
+    if oxi is not None and not oxi.data.empty:
+        t = oxi.data["time"]
+        return (t.iloc[-1] - t.iloc[0]).total_seconds() / 60
+    return 0.0
 
 
 def segments(epochs: pd.DataFrame) -> list[dict]:
@@ -254,6 +272,7 @@ def save_night(night_date: date, paths: list[Path], opts: ProcessOptions,
         if existing and night_dir.exists():
             # merge: keep previous files that are not being replaced by name
             pass
+        new_dir = not night_dir.exists()
         night_dir.mkdir(parents=True, exist_ok=True)
         for p in paths:
             if p.parent != night_dir:
@@ -263,6 +282,10 @@ def save_night(night_date: date, paths: list[Path], opts: ProcessOptions,
         result = analyze(all_paths, opts)
         if inherited:
             result["sync"] = inherited
+        if not existing and result["recorded_min"] < MIN_NIGHT_MIN:
+            if new_dir:
+                shutil.rmtree(night_dir, ignore_errors=True)
+            return None, f"skipped (only {result['recorded_min']:.0f} min recorded)"
         night = existing or Night(night_date=night_date)
         if existing:
             night.epochs.clear()
@@ -289,6 +312,8 @@ def _fill(night: Night, result: dict, opts: ProcessOptions, paths: list[Path]) -
     night.summary = summarize(ep, result["events"], result["oximetry"])
     if result.get("sync"):
         night.summary["sync"] = _jsonable(result["sync"])
+    if result.get("trimmed"):
+        night.summary["trimmed_sessions"] = result["trimmed"]
     night.oximetry = _jsonable(result["oximetry"]) if result["oximetry"] else None
     for i, row in enumerate(ep.itertuples(index=False)):
         night.epochs.append(Epoch(idx=i, t=pd.Timestamp(row.t).to_pydatetime(), stage=row.stage,

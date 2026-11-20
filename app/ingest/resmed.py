@@ -167,17 +167,59 @@ _EVENT_MAP = {
 }
 
 
+def _fallback_read_annotations(path: Path) -> tuple[datetime, list[tuple[float, float, str]]]:
+    """Decode EDF+ annotations (TALs) directly.
+
+    ResMed writes EVE.edf as EDF+D ("discontinuous"), which pyedflib refuses to open.
+    Each data record's "EDF Annotations" signal holds Time-stamped Annotation Lists:
+    ``+onset[\\x15duration]\\x14text\\x14[text\\x14...]\\x00``, onset in seconds from the
+    file start. The record's first TAL (empty text) is only its timekeeping stamp.
+    """
+    raw = Path(path).read_bytes()
+    h = _parse_edf_header(raw)
+    idx = [i for i, lb in enumerate(h["labels"]) if lb.lower().startswith("edf annotations")]
+    if not idx:
+        raise ValueError(f"{Path(path).name}: no EDF Annotations signal")
+    rec_bytes = sum(h["nsamp"]) * 2
+    body = raw[h["header_bytes"]:]
+    out: list[tuple[float, float, str]] = []
+    for r in range(len(body) // rec_bytes):
+        rec = body[r * rec_bytes:(r + 1) * rec_bytes]
+        for i in idx:
+            off = sum(h["nsamp"][:i]) * 2
+            sig = rec[off: off + h["nsamp"][i] * 2]
+            for tal in sig.split(b"\x00"):
+                parts = tal.split(b"\x14")
+                if len(parts) < 2 or not parts[0]:
+                    continue
+                head = parts[0].split(b"\x15")
+                try:
+                    onset = float(head[0])
+                    dur = float(head[1]) if len(head) > 1 and head[1] else 0.0
+                except ValueError:
+                    continue
+                for txt in parts[1:]:
+                    if txt.strip():
+                        out.append((onset, dur, txt.decode("utf-8", "replace").strip()))
+    return h["start"], out
+
+
 def read_eve(path: Path) -> list[RespEvent]:
     """Read respiratory events from a ResMed EVE.edf (EDF+ annotations)."""
-    import pyedflib
-
     path = Path(path)
-    f = pyedflib.EdfReader(str(path), check_file_size=pyedflib.REPAIR_FILE_SIZE_IF_WRONG)
     try:
-        start = f.getStartdatetime()
-        onsets, durations, descs = f.readAnnotations()
-    finally:
-        f.close()
+        import pyedflib
+
+        f = pyedflib.EdfReader(str(path), check_file_size=pyedflib.REPAIR_FILE_SIZE_IF_WRONG)
+        try:
+            start = f.getStartdatetime()
+            onsets, durations, descs = f.readAnnotations()
+        finally:
+            f.close()
+    except Exception as exc:  # noqa: BLE001 - EDF+D files are rejected by pyedflib
+        logger.debug("pyedflib could not read %s (%s); using fallback reader", path.name, exc)
+        start, anns = _fallback_read_annotations(path)
+        onsets, durations, descs = zip(*anns) if anns else ((), (), ())
     out: list[RespEvent] = []
     for onset, dur, desc in zip(onsets, durations, descs):
         d = str(desc).strip()
@@ -187,6 +229,47 @@ def read_eve(path: Path) -> list[RespEvent]:
         kind = next((v for k, v in _EVENT_MAP.items() if k in key), d)
         out.append(RespEvent(start=start + timedelta(seconds=float(onset)),
                              duration_s=float(dur) if dur and dur > 0 else 10.0, kind=kind))
+    return out
+
+
+STRAY_GAP_S = 2 * 3600  # sessions further than this from the rest form their own block
+STRAY_MAX_S = 30 * 60  # ...and such a block shorter than this is a test / mask fitting
+
+
+def drop_stray_sessions(night: ResmedNight) -> list[dict]:
+    """Remove short CPAP sessions far away from the night's main recording.
+
+    Pressing Start in the afternoon to test the machine or a mask, or for a minute the
+    next morning, lands in the same noon-to-noon night and would otherwise turn the
+    hours in between into "awake". Real nights have gaps of minutes between sessions
+    (getting up, mask off); these tests sit hours away and last a few minutes.
+    Returns what was removed, for display.
+    """
+    segs = sorted(night.segments, key=lambda s: s.start)
+    if len(segs) < 2:
+        return []
+    blocks = [[segs[0]]]
+    for s in segs[1:]:
+        if (s.start - max(x.end for x in blocks[-1])).total_seconds() > STRAY_GAP_S:
+            blocks.append([s])
+        else:
+            blocks[-1].append(s)
+    if len(blocks) == 1:
+        return []
+    dur = [sum((s.end - s.start).total_seconds() for s in b) for b in blocks]
+    main = int(np.argmax(dur))
+    dropped = [b for i, b in enumerate(blocks) if i != main and dur[i] < STRAY_MAX_S]
+    if not dropped:
+        return []
+    out = []
+    for b in dropped:
+        a, z = b[0].start, max(s.end for s in b)
+        night.segments = [s for s in night.segments if s not in b]
+        night.events = [e for e in night.events
+                        if not a - timedelta(seconds=60) <= e.start <= z + timedelta(seconds=60)]
+        out.append({"start": a.isoformat(), "end": z.isoformat(),
+                    "minutes": round((z - a).total_seconds() / 60, 1),
+                    "files": [s.source for s in b]})
     return out
 
 

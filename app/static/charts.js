@@ -50,6 +50,13 @@ function renderNight(host, d) {
             height: rh - 4, fill: COLORS[s], rx: 2 }, svg);
           i = j;
         }
+        // what you logged as awake: a band along the Awake row
+        for (const w of (d.wake_log?.entries || [])) {
+          const a = Math.max(t0, new Date(w.start).getTime()), b = Math.min(t1, new Date(w.end).getTime());
+          if (b <= a) continue;
+          const r = el('rect', { x: x(a), y: y0 + 1, width: Math.max(2, x(b) - x(a)), height: 4, class: 'logged', rx: 2 }, svg);
+          el('title', {}, r).textContent = `You: awake ${w.start.slice(11, 16)}–${w.end.slice(11, 16)}`;
+        }
         for (const e of events) if (e.source !== 'resmed')
           el('line', { x1: x(e.t), x2: x(e.t), y1: y0 + p.h - 6, y2: y0 + p.h, class: 'desattick' }, svg);
       } else {

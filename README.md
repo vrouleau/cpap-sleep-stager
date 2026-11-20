@@ -22,6 +22,12 @@ For each 30-second epoch it computes features over a 2-minute window, then stage
 
 All thresholds are relative to the night itself (robust z-scores), so the rules adapt to you. It also works with only one source, though less accurately: CPAP-only cannot really separate quiet wake from REM, and O2Ring-only has no breathing data.
 
+**CPAP only (no ring):** a long period of lying awake with the mask on leaves no movement or mask-off marker, but the breathing changes. On real nights with a known awake period it dropped from about 21 to 13 breaths/min and became about twice as irregular for hours, then switched back when sleep returned. So 20 minutes or more of breathing that is at least 15% slower than the night's sleep rate *and* irregular counts as awake, and the awake period grows through short sleep-like gaps (`bw_*` in `DEFAULTS`). REM is irregular too, but it does not slow down like this, and it is rarely that long.
+
+### Your wake log
+
+On a night's page, log the times you remember being awake (for example *01:30 to 05:15* after the dog woke you). They show as a dark band on the timeline, and the page reports how much of that time the app also staged as awake. It is the only ground truth you have without a sleep lab. Use it to judge how far to trust a night, and as data for tuning the rules. Log entries survive re-runs and re-uploads. API: `POST /api/nights/{id}/wake-log` with `{"start": "01:30", "end": "05:15"}`; times before noon count as the next morning.
+
 ### Optional: `sleepecg` engine
 
 [`sleepecg`](https://github.com/cbrnr/sleepecg)'s `wrn-gru-mesa` model (wake/REM/NREM) can serve as a prior. The respiratory and motion evidence is then fused on top. The catch is that sleepecg was trained on ECG R-peaks, and the O2Ring only exports a smoothed pulse rate. Here beat times are rebuilt by integrating that pulse rate, which keeps heart-rate level and slow variability but loses true beat-to-beat HRV. Treat it as an experiment and compare it against the heuristic on your own nights. To enable it, build with `WITH_SLEEPECG=true` (keras on the jax CPU backend, image about 600 MB larger). Age and sex are model inputs, and you can set them on upload.
@@ -39,7 +45,7 @@ Data lives in `./data` (`sleep.db` plus the original uploaded files, kept so a n
 
 ### Uploading
 
-* Drop the night's `*_BRP.edf` (+ `*_EVE.edf`) files and/or the O2Ring CSV, **or a zip of the whole `DATALOG` folder**. Nights are split automatically, noon to noon, and named after the evening they start. PLD/SAD/CSL files are ignored.
+* Drop the night's `*_BRP.edf` (+ `*_EVE.edf`) files and/or the O2Ring CSV, **or a zip of the whole `DATALOG` folder**. Nights are split automatically, noon to noon, and named after the evening they start. PLD/SAD/CSL files are ignored. Short CPAP sessions (under 30 min in all) more than 2 h away from the night's main recording, such as testing the machine or a mask in the afternoon or for a minute the next morning, are left out so the hours in between don't count as awake. The night page lists what was ignored. A new night with less than 1 h of recording in total is not imported at all (the upload reports it as skipped).
 * **Auto-correct CPAP clock** (on by default): see below.
 * Tick *Replace nights that already exist* to re-import a night.
 

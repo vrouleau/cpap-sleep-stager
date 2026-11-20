@@ -5,7 +5,7 @@ import io
 import logging
 import tempfile
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -65,7 +65,7 @@ def _night_dict(n: Night, with_epochs: bool = False) -> dict:
         "id": n.id, "night_date": n.night_date.isoformat(), "start": n.start, "end": n.end,
         "engine": n.engine, "has_resmed": n.has_resmed, "has_o2ring": n.has_o2ring,
         "summary": n.summary, "files": n.files, "notes": n.notes,
-        "cpap_offset_s": n.cpap_offset_s,
+        "cpap_offset_s": n.cpap_offset_s, "wake_log": _wake_log_check(n),
     }
     if with_epochs:
         d["epoch_s"] = EPOCH_S
@@ -91,6 +91,66 @@ def _segments(n: Night) -> list[dict]:
     return out
 
 
+def _resolve_clock(night_date: date, value: str) -> datetime:
+    """'HH:MM' on the night of ``night_date`` (evening -> that date, before noon -> the
+    next morning), or a full ISO timestamp."""
+    value = value.strip()
+    try:
+        if "T" in value or len(value) > 8:
+            return datetime.fromisoformat(value).replace(tzinfo=None)
+        t = time.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(400, f"Not a time: {value!r} (use HH:MM)") from exc
+    day = night_date if t.hour >= 12 else night_date + timedelta(days=1)
+    return datetime.combine(day, t)
+
+
+def _wake_log_check(n: Night) -> dict:
+    """Compare what you logged as awake against what the app staged."""
+    entries, tot_min, tot_hit = [], 0.0, 0.0
+    epochs = [(e.t, e.stage) for e in n.epochs] if n.wake_log else []
+    for i, w in enumerate(n.wake_log or []):
+        a, b = datetime.fromisoformat(w["start"]), datetime.fromisoformat(w["end"])
+        inside = [st for t, st in epochs if a <= t + timedelta(seconds=EPOCH_S / 2) < b]
+        hit = sum(st == "Awake" for st in inside) * EPOCH_S / 60
+        mins = len(inside) * EPOCH_S / 60
+        tot_min, tot_hit = tot_min + mins, tot_hit + hit
+        entries.append({"i": i, "start": w["start"], "end": w["end"],
+                        "minutes": round((b - a).total_seconds() / 60, 1),
+                        "recorded_min": mins, "staged_awake_min": hit,
+                        "agreement_pct": round(100 * hit / mins) if mins else None})
+    return {"entries": entries, "logged_min": tot_min, "staged_awake_min": tot_hit,
+            "agreement_pct": round(100 * tot_hit / tot_min) if tot_min else None}
+
+
+def _add_wake(night_id: int, start: str, end: str) -> None:
+    with SessionLocal() as db:
+        n = db.get(Night, night_id)
+        if n is None:
+            raise HTTPException(404)
+        a, b = _resolve_clock(n.night_date, start), _resolve_clock(n.night_date, end)
+        if b <= a:
+            b += timedelta(days=1) if (a - b) > timedelta(hours=12) else timedelta(0)
+        if b <= a:
+            raise HTTPException(400, "End must be after start")
+        log = list(n.wake_log or []) + [{"start": a.isoformat(), "end": b.isoformat()}]
+        n.wake_log = sorted(log, key=lambda w: w["start"])
+        db.commit()
+
+
+def _remove_wake(night_id: int, i: int) -> None:
+    with SessionLocal() as db:
+        n = db.get(Night, night_id)
+        if n is None:
+            raise HTTPException(404)
+        log = list(n.wake_log or [])
+        if not 0 <= i < len(log):
+            raise HTTPException(404)
+        del log[i]
+        n.wake_log = log
+        db.commit()
+
+
 async def _ingest(files: list[UploadFile], opts: pipeline.ProcessOptions, replace: bool,
                   notes: str | None) -> list[dict]:
     payload = [(f.filename or "upload", await f.read()) for f in files]
@@ -105,7 +165,8 @@ async def _ingest(files: list[UploadFile], opts: pipeline.ProcessOptions, replac
         for d, ps in sorted(groups.items()):
             try:
                 night, status = pipeline.save_night(d, ps, opts, replace=replace, notes=notes)
-                results.append({"night_date": d.isoformat(), "id": night.id, "status": status})
+                results.append({"night_date": d.isoformat(), "status": status,
+                                **({"id": night.id} if night else {})})
             except Exception as exc:  # noqa: BLE001
                 logging.exception("Failed night %s", d)
                 results.append({"night_date": d.isoformat(), "status": f"error: {exc}"})
@@ -175,6 +236,18 @@ def reprocess_form(night_id: int, engine: str = Form("heuristic"), offset: float
     return RedirectResponse(f"/nights/{night_id}", status_code=303)
 
 
+@app.post("/nights/{night_id}/wake-log")
+def wake_log_form(night_id: int, start: str = Form(...), end: str = Form(...)):
+    _add_wake(night_id, start, end)
+    return RedirectResponse(f"/nights/{night_id}#wake-log", status_code=303)
+
+
+@app.post("/nights/{night_id}/wake-log/{i}/delete")
+def wake_log_delete_form(night_id: int, i: int):
+    _remove_wake(night_id, i)
+    return RedirectResponse(f"/nights/{night_id}#wake-log", status_code=303)
+
+
 @app.post("/nights/{night_id}/delete")
 def delete_form(night_id: int):
     _delete(night_id)
@@ -236,6 +309,21 @@ def api_epochs_csv(night_id: int):
     buf.seek(0)
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.post("/api/nights/{night_id}/wake-log")
+def api_wake_log_add(night_id: int, body: dict):
+    """Body: {"start": "01:30", "end": "05:15"} (or ISO timestamps)."""
+    _add_wake(night_id, str(body.get("start", "")), str(body.get("end", "")))
+    with SessionLocal() as db:
+        return _wake_log_check(db.get(Night, night_id))
+
+
+@app.delete("/api/nights/{night_id}/wake-log/{i}")
+def api_wake_log_delete(night_id: int, i: int):
+    _remove_wake(night_id, i)
+    with SessionLocal() as db:
+        return _wake_log_check(db.get(Night, night_id))
 
 
 @app.delete("/api/nights/{night_id}")

@@ -4,7 +4,7 @@ import os
 from datetime import date, datetime
 
 from sqlalchemy import (JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String,
-                        Text, create_engine)
+                        Text, create_engine, inspect, text)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -38,6 +38,8 @@ class Night(Base):
     files: Mapped[list] = mapped_column(JSON, default=list)
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
     oximetry: Mapped[dict | None] = mapped_column(JSON)
+    # periods you remember being awake: [{"start": iso, "end": iso}], your ground truth
+    wake_log: Mapped[list | None] = mapped_column(JSON)
 
     epochs: Mapped[list["Epoch"]] = relationship(
         back_populates="night", cascade="all, delete-orphan", order_by="Epoch.idx")
@@ -85,3 +87,8 @@ EPOCH_FIELDS = ["resp_rate", "breath_cv", "amp_cv", "flow_present", "resp_events
 def init_db() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     Base.metadata.create_all(engine)
+    # lightweight migrations for columns added after a database was created
+    cols = {c["name"] for c in inspect(engine).get_columns("nights")}
+    with engine.begin() as conn:
+        if "wake_log" not in cols:
+            conn.execute(text("ALTER TABLE nights ADD COLUMN wake_log JSON"))

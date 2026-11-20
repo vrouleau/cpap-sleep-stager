@@ -83,3 +83,15 @@ svg .ev:hover .evline { opacity: 1; stroke-width: 2; }
 .card.sync.warn { border-left: 4px solid #d89a1d; }
 .card.sync.ok { border-left: 4px solid var(--line2); }
 .card.sync p { margin: .3rem 0; }
+/* wake log: what you remember, vs. what the app staged */
+:root { --logged: #1d2330; }
+@media (prefers-color-scheme: dark) { :root { --logged: #e6e9ef; } }
+.sw.logged { background: var(--logged); height: 4px; vertical-align: middle; }
+rect.logged { fill: var(--logged); opacity: .85; }
+.tag.good { color: #1f7a4d; border-color: #1f9d8a; }
+form.inline { display: flex; gap: .5rem; align-items: end; flex-wrap: wrap; }
+form.inline label { display: flex; flex-direction: column; font-size: .82rem; color: var(--muted); gap: .2rem; }
+#wake-log table { margin-top: .6rem; }
+#wake-log td form { margin: 0; }
+.linkbtn { background: none; color: var(--muted); padding: 0 .3rem; }
+.linkbtn:hover { color: var(--line1); }
