@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from app.db import DATA_DIR, EPOCH_FIELDS, Epoch, Event, Night, SessionLocal
-from app.ingest.o2ring import load_o2ring, looks_like_o2ring
+from app.ingest.o2ring import is_o2ring_raw, load_o2ring, looks_like_o2ring, raw_start
 from app.ingest.resmed import (_RESMED_NAME, classify_resmed_file, drop_stray_sessions,
                                load_resmed)
 from app.staging import engine as heuristic
@@ -55,7 +55,9 @@ def extract_upload(files: list[tuple[str, bytes]], workdir: Path) -> list[Path]:
 
     def keep(name: str, data: bytes):
         base = PurePosixPath(name.replace("\\", "/")).name
-        if not base or Path(base).suffix.lower() not in KEEP_EXT:
+        # raw O2Ring recordings have no extension: recognise them by content
+        if not base or (Path(base).suffix.lower() not in KEEP_EXT
+                        and not is_o2ring_raw(data[:40], len(data))):
             return
         m = _RESMED_NAME.search(base)
         if m and m.group(2).upper() not in KEEP_RESMED:
@@ -94,6 +96,9 @@ def group_by_night(paths: list[Path], dayfirst: bool = False) -> dict[date, list
             groups[sleep_date(ts)].append(p)
         elif looks_like_o2ring(p):
             try:
+                if p.suffix.lower() not in {".csv", ".txt"}:
+                    groups[sleep_date(raw_start(p))].append(p)
+                    continue
                 from o2ring_analyzer.parser import parse_file
                 t0 = parse_file(p, dayfirst=dayfirst).data["time"].iloc[0].to_pydatetime()
                 groups[sleep_date(t0)].append(p)
@@ -118,10 +123,13 @@ def analyze(paths: list[Path], opts: ProcessOptions) -> dict:
         for ev in resmed.events:
             ev.start += shift
     # machine/mask tests hours away from the night would otherwise read as hours awake
-    trimmed = drop_stray_sessions(resmed) if resmed else []
+    oxi = load_o2ring(csv, dayfirst=opts.dayfirst) if csv else None
+    ring = [(oxi.data["time"].iloc[0].to_pydatetime(), oxi.data["time"].iloc[-1].to_pydatetime())]         if oxi is not None and not oxi.data.empty else []
+    trimmed = drop_stray_sessions(resmed, ring) if resmed else []
     if trimmed:
         logger.info("Ignoring short CPAP sessions away from the night: %s", trimmed)
-    oxi = load_o2ring(csv, dayfirst=opts.dayfirst) if csv else None
+    if resmed is not None and not resmed.segments and not resmed.events:
+        resmed = None
 
     epochs = build_epochs(resmed, oxi)
     engine_used = "heuristic"

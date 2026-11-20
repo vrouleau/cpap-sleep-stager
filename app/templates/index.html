@@ -6,10 +6,10 @@
     <form action="/upload" method="post" enctype="multipart/form-data" id="upform">
       <label class="drop" id="drop">
         <input type="file" name="files" multiple required
-               accept=".edf,.EDF,.csv,.CSV,.txt,.zip">
+               >
         <strong>Drop files or a .zip here</strong>
         <span>ResMed <code>*_BRP.edf</code> (+ <code>*_EVE.edf</code> for events) and/or the
-          O2Ring CSV export. A zip of the whole SD card <code>DATALOG</code> folder works: nights are split automatically.</span>
+          O2Ring CSV export or raw ring files (O2 Insight Pro's <code>DATA</code> folder). A zip of the whole SD card <code>DATALOG</code> folder works: nights are split automatically.</span>
         <em id="picked"></em>
       </label>
       <details>

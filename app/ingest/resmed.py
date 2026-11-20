@@ -236,29 +236,34 @@ STRAY_GAP_S = 2 * 3600  # sessions further than this from the rest form their ow
 STRAY_MAX_S = 30 * 60  # ...and such a block shorter than this is a test / mask fitting
 
 
-def drop_stray_sessions(night: ResmedNight) -> list[dict]:
+def drop_stray_sessions(night: ResmedNight,
+                        other: list[tuple[datetime, datetime]] = ()) -> list[dict]:
     """Remove short CPAP sessions far away from the night's main recording.
 
     Pressing Start in the afternoon to test the machine or a mask, or for a minute the
     next morning, lands in the same noon-to-noon night and would otherwise turn the
     hours in between into "awake". Real nights have gaps of minutes between sessions
     (getting up, mask off); these tests sit hours away and last a few minutes.
+    ``other`` are recordings from other devices (the O2Ring) that belong to the night:
+    they count towards the main block but are never removed.
     Returns what was removed, for display.
     """
-    segs = sorted(night.segments, key=lambda s: s.start)
-    if len(segs) < 2:
+    items = sorted([(s.start, s.end, s) for s in night.segments]
+                   + [(a, b, None) for a, b in other], key=lambda x: x[0])
+    if len(items) < 2:
         return []
-    blocks = [[segs[0]]]
-    for s in segs[1:]:
-        if (s.start - max(x.end for x in blocks[-1])).total_seconds() > STRAY_GAP_S:
-            blocks.append([s])
+    blocks = [[items[0]]]
+    for it in items[1:]:
+        if (it[0] - max(x[1] for x in blocks[-1])).total_seconds() > STRAY_GAP_S:
+            blocks.append([it])
         else:
-            blocks[-1].append(s)
+            blocks[-1].append(it)
     if len(blocks) == 1:
         return []
-    dur = [sum((s.end - s.start).total_seconds() for s in b) for b in blocks]
+    dur = [sum((b_ - a_).total_seconds() for a_, b_, _ in b) for b in blocks]
     main = int(np.argmax(dur))
-    dropped = [b for i, b in enumerate(blocks) if i != main and dur[i] < STRAY_MAX_S]
+    dropped = [[x[2] for x in b] for i, b in enumerate(blocks)
+               if i != main and dur[i] < STRAY_MAX_S and all(x[2] is not None for x in b)]
     if not dropped:
         return []
     out = []

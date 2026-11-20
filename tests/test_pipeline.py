@@ -174,3 +174,60 @@ def test_short_night_skipped(tmp_path):
         assert r.json()[0]["status"].startswith("skipped (only 10 min")
         assert "id" not in r.json()[0]
         assert all(n["night_date"] != "2026-10-27" for n in c.get("/api/nights").json())
+
+
+def _csv_to_raw(csv_path, out_dir):
+    """Write the demo night's ring CSV as a raw O2Ring recording (format v3)."""
+    import struct
+
+    from o2ring_analyzer.parser import parse_file
+
+    d = parse_file(csv_path).data
+    t0 = d["time"].iloc[0].to_pydatetime()
+    n = len(d)
+    recs = bytearray()
+    for r in d.itertuples(index=False):
+        recs += bytes([int(r.spo2), int(r.pulse), 0, int(r.motion), 0])
+    head = bytearray(40)
+    head[0] = 3
+    struct.pack_into("<HBBBBB", head, 2, t0.year, t0.month, t0.day, t0.hour, t0.minute, t0.second)
+    struct.pack_into("<II", head, 9, 40 + len(recs), n * 4)
+    out = out_dir / t0.strftime("%Y%m%d%H%M%S")
+    out.write_bytes(bytes(head + recs))
+    return out, d
+
+
+def test_o2ring_raw_recording(demo_dir, tmp_path):
+    from app.ingest.o2ring import looks_like_o2ring, read_raw
+    from app.pipeline import extract_upload
+
+    raw, d = _csv_to_raw(_files(demo_dir, "csv")[0], tmp_path)
+    assert looks_like_o2ring(raw) and not looks_like_o2ring(_files(demo_dir, "edf")[0])
+    got = read_raw(raw)
+    assert (got["time"].to_numpy() == d["time"].to_numpy()).all()
+    np.testing.assert_array_equal(got["pulse"], d["pulse"])
+    # zipped DATA folder: extension-less raw files are kept, other junk is not
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.write(raw, f"DATA/2652200387/{raw.name}")
+        zf.writestr("DATA/2652200387/notes", b"not a recording")
+    kept = extract_upload([("o2.zip", buf.getvalue())], tmp_path / "x")
+    assert [p.name for p in kept] == [raw.name]
+    groups = group_by_night(kept)
+    assert list(groups) == list(group_by_night(_files(demo_dir, "csv")))
+    # staging from the raw file is as good as from the CSV
+    acc, r = _accuracy(demo_dir, _files(demo_dir, "edf") + [raw])
+    assert acc > 0.9 and r["has_o2ring"]
+
+
+def test_stray_cpap_vs_ring_night():
+    """Only CPAP data is a morning test, but the ring recorded the night: drop the test."""
+    from datetime import datetime
+
+    from app.ingest.resmed import FlowSegment, ResmedNight, drop_stray_sessions
+
+    night = ResmedNight(segments=[FlowSegment(source="t", start=datetime(2026, 10, 28, 9, 21),
+                                              fs=25, flow=np.zeros(25 * 60 * 22))])
+    ring = [(datetime(2026, 10, 27, 21, 25), datetime(2026, 10, 28, 5, 40))]
+    assert [d["files"] for d in drop_stray_sessions(night, ring)] == [["t"]]
+    assert night.segments == []

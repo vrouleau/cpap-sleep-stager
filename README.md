@@ -13,6 +13,7 @@ Self-hosted web app that turns a **ResMed CPAP SD card** (`BRP.edf` flow trace +
 | `DATALOG/YYYYMMDD/*_BRP.edf` | [`pyedflib`](https://github.com/holgern/pyedflib), with a built-in fallback reader for odd ResMed headers | Breath detection at 25 Hz: rate, breath-to-breath interval variability, tidal-amplitude variability, mask-on/off |
 | `*_EVE.edf` | pyedflib (EDF+ annotations) | Apneas / hypopneas / RERAs, used for event markers and AHI over *sleep* time |
 | O2Ring CSV (O2 Insight Pro / ViHealth export) | [`o2ring-analyzer`](https://pypi.org/project/o2ring-analyzer/) | Pulse, SpO₂ and motion, plus its ODI3/ODI4, T90, nadir and desaturation events |
+| O2Ring raw recordings (no extension, e.g. `20261101214802`, in `%LOCALAPPDATA%\O2 Insight Pro\DATA\<device id>`) | built-in decoder | Same as the CSV, without exporting: 4-s SpO₂, pulse and motion |
 
 For each 30-second epoch it computes features over a 2-minute window, then stages:
 
@@ -45,7 +46,7 @@ Data lives in `./data` (`sleep.db` plus the original uploaded files, kept so a n
 
 ### Uploading
 
-* Drop the night's `*_BRP.edf` (+ `*_EVE.edf`) files and/or the O2Ring CSV, **or a zip of the whole `DATALOG` folder**. Nights are split automatically, noon to noon, and named after the evening they start. PLD/SAD/CSL files are ignored. Short CPAP sessions (under 30 min in all) more than 2 h away from the night's main recording, such as testing the machine or a mask in the afternoon or for a minute the next morning, are left out so the hours in between don't count as awake. The night page lists what was ignored. A new night with less than 1 h of recording in total is not imported at all (the upload reports it as skipped).
+* Drop the night's `*_BRP.edf` (+ `*_EVE.edf`) files and/or the O2Ring CSV or raw ring files, **or a zip of the whole `DATALOG` folder and/or O2 Insight Pro's `DATA` folder**. Nights are split automatically, noon to noon, and named after the evening they start. PLD/SAD/CSL files are ignored. Short CPAP sessions (under 30 min in all) more than 2 h away from the night's main recording, such as testing the machine or a mask in the afternoon or for a minute the next morning, are left out so the hours in between don't count as awake. The night page lists what was ignored. A new night with less than 1 h of recording in total is not imported at all (the upload reports it as skipped).
 * **Auto-correct CPAP clock** (on by default): see below.
 * Tick *Replace nights that already exist* to re-import a night.
 
