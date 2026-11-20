@@ -40,14 +40,26 @@ Data lives in `./data` (`sleep.db` plus the original uploaded files, kept so a n
 ### Uploading
 
 * Drop the night's `*_BRP.edf` (+ `*_EVE.edf`) files and/or the O2Ring CSV, **or a zip of the whole `DATALOG` folder**. Nights are split automatically, noon to noon, and named after the evening they start. PLD/SAD/CSL files are ignored.
-* **O2Ring clock offset**: the ring and the CPAP keep their own clocks. If the desaturations don't line up with the apnea markers, set an offset in seconds and hit *Re-run*.
+* **Auto-correct CPAP clock** (on by default): see below.
 * Tick *Replace nights that already exist* to re-import a night.
+
+### Clock sync and daylight saving time
+
+The O2Ring takes its time from your phone on every sync, so the app treats it as the true clock and shifts the **ResMed** timestamps to match. ResMed machines never adjust for DST. The AirSense 10 clock has to be changed by hand, and the AirSense 11 has no clock you can set. After a time change the CPAP is often exactly an hour off.
+
+When a night has both devices, the app estimates the offset two ways:
+
+1. **Mask on/off vs. ring motion** (primary). Each BRP file starts and ends when the mask goes on or comes off, and your hands move the ring at that moment. The app tries shifts of up to ±10 min around 0 and around ±1 h, and picks the one that puts the most ring motion on those instants. It's accurate to about the ring's 4-s sampling. Mid-night bathroom breaks give the sharpest markers. For a guaranteed marker, shake your ring hand when you press Start.
+2. **SpO₂ response to apneas** (cross-check). The average finger SpO₂ low point should come about 30 s after a ResMed event ends. It only confirms the estimate to about ±15 s.
+
+The night page shows the result, including a ⏰ "missed DST" note when the shift is about 1 h, and an **Apply & re-run** button. With *Auto-correct CPAP clock* ticked on upload, a high-confidence correction is applied automatically. CPAP-only nights then reuse the correction from the closest earlier night that had both devices. You can also set *CPAP clock correction (s)* by hand, for example `-3600` when the machine is still on summer time.
 
 ### API
 
 ```
 GET    /api/nights                  list + summaries
-POST   /api/nights                  multipart: files=..., engine, offset, dayfirst, age, gender, replace
+POST   /api/nights                  multipart: files=..., engine, offset (CPAP clock correction, s),
+                                    auto_sync, dayfirst, age, gender, replace
 GET    /api/nights/{id}             summary + per-epoch features/stages + events
 GET    /api/nights/{id}/segments    merged Awake/NREM/REM runs with start/end
 GET    /api/nights/{id}/epochs.csv  per-epoch export
@@ -66,6 +78,7 @@ curl -F files=@/tmp/sd.zip -F files=@O2Ring_export.csv http://sleep.local:8000/a
 ```bash
 pip install -r requirements.txt pytest httpx
 python scripts/make_demo_data.py demo --nights 5   # synthetic BRP/EVE/CSV + truth_*.csv
+python scripts/make_demo_data.py demo --ring-ahead -3600   # simulate a CPAP that missed DST
 DATA_DIR=./data uvicorn app.main:app --reload
 pytest -q
 ```
@@ -79,6 +92,7 @@ app/
   staging/features.py      breath detection + per-epoch features
   staging/engine.py        heuristic staging (+ fusion with an ML prior)
   staging/sleepecg_engine.py optional sleepecg prior
+  staging/sync.py          CPAP vs O2Ring clock-offset detection (incl. DST)
   pipeline.py              upload → nights → analysis → DB
   main.py                  FastAPI routes, templates, JSON API
 ```

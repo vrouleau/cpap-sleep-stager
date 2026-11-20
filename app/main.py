@@ -43,13 +43,29 @@ def _fmt_min(m):
 templates.env.filters["hm"] = _fmt_min
 
 
+def _fmt_offset(sec):
+    """Signed seconds -> '+1 h 0 min 12 s' / '-23 s'."""
+    if sec is None:
+        return "–"
+    sec = int(round(float(sec)))
+    sign = "−" if sec < 0 else "+"
+    a = abs(sec)
+    h, rem = divmod(a, 3600)
+    m, s_ = divmod(rem, 60)
+    parts = [f"{v} {u}" for v, u in ((h, "h"), (m, "min"), (s_, "s")) if v]
+    return sign + " ".join(parts) if sec else "0 s"
+
+
+templates.env.filters["offset"] = _fmt_offset
+
+
 # ---------------------------------------------------------------- helpers
 def _night_dict(n: Night, with_epochs: bool = False) -> dict:
     d = {
         "id": n.id, "night_date": n.night_date.isoformat(), "start": n.start, "end": n.end,
         "engine": n.engine, "has_resmed": n.has_resmed, "has_o2ring": n.has_o2ring,
         "summary": n.summary, "files": n.files, "notes": n.notes,
-        "o2ring_offset_s": n.o2ring_offset_s,
+        "cpap_offset_s": n.cpap_offset_s,
     }
     if with_epochs:
         d["epoch_s"] = EPOCH_S
@@ -96,9 +112,10 @@ async def _ingest(files: list[UploadFile], opts: pipeline.ProcessOptions, replac
         return results
 
 
-def _opts(engine: str, offset: float, dayfirst: bool, age: str | None, gender: str | None):
+def _opts(engine: str, offset: float, dayfirst: bool, age: str | None, gender: str | None,
+          auto_sync: bool = False):
     return pipeline.ProcessOptions(
-        engine=engine, o2ring_offset_s=offset, dayfirst=dayfirst,
+        engine=engine, cpap_offset_s=offset, dayfirst=dayfirst, auto_sync=auto_sync,
         age=int(age) if age else None, gender=gender or None)
 
 
@@ -117,8 +134,9 @@ def index(request: Request):
 async def upload_form(files: list[UploadFile] = File(...), engine: str = Form("heuristic"),
                       offset: float = Form(0.0), dayfirst: bool = Form(False),
                       replace: bool = Form(False), age: str | None = Form(None),
-                      gender: str | None = Form(None), notes: str | None = Form(None)):
-    results = await _ingest(files, _opts(engine, offset, dayfirst, age, gender), replace,
+                      gender: str | None = Form(None), notes: str | None = Form(None),
+                      auto_sync: bool = Form(False)):
+    results = await _ingest(files, _opts(engine, offset, dayfirst, age, gender, auto_sync), replace,
                             notes or None)
     ok = [r for r in results if "id" in r]
     if len(ok) == 1:
@@ -146,8 +164,14 @@ def night_page(request: Request, night_id: int):
 @app.post("/nights/{night_id}/reprocess")
 def reprocess_form(night_id: int, engine: str = Form("heuristic"), offset: float = Form(0.0),
                    dayfirst: bool = Form(False), age: str | None = Form(None),
-                   gender: str | None = Form(None)):
-    pipeline.reprocess(night_id, _opts(engine, offset, dayfirst, age, gender))
+                   gender: str | None = Form(None), auto_sync: bool = Form(False)):
+    with SessionLocal() as db:
+        n = db.get(Night, night_id)
+        if n is None:
+            raise HTTPException(404)
+        age = age or (str(n.age) if n.age else None)
+        gender = gender or n.gender
+    pipeline.reprocess(night_id, _opts(engine, offset, dayfirst, age, gender, auto_sync))
     return RedirectResponse(f"/nights/{night_id}", status_code=303)
 
 
@@ -173,8 +197,9 @@ def api_nights():
 async def api_upload(files: list[UploadFile] = File(...), engine: str = Form("heuristic"),
                      offset: float = Form(0.0), dayfirst: bool = Form(False),
                      replace: bool = Form(True), age: str | None = Form(None),
-                     gender: str | None = Form(None)):
-    return await _ingest(files, _opts(engine, offset, dayfirst, age, gender), replace, None)
+                     gender: str | None = Form(None), auto_sync: bool = Form(False)):
+    return await _ingest(files, _opts(engine, offset, dayfirst, age, gender, auto_sync),
+                         replace, None)
 
 
 @app.get("/api/nights/{night_id}")

@@ -21,12 +21,13 @@
               <option value="sleepecg" {% if not sleepecg %}disabled{% endif %}>
                 sleepecg + respiratory{% if not sleepecg %} (not installed){% endif %}</option>
             </select></label>
-          <label>O2Ring clock offset (s)
+          <label>CPAP clock correction (s)
             <input type="number" name="offset" value="0" step="1"
-                   title="Seconds to add to O2Ring timestamps to line them up with the CPAP clock"></label>
+                   title="Seconds added to ResMed timestamps. -3600 = machine still on summer time"></label>
           <label>Age <input type="number" name="age" min="1" max="120" placeholder="for sleepecg"></label>
           <label>Sex <select name="gender"><option value="">–</option><option>male</option><option>female</option></select></label>
           <label class="chk"><input type="checkbox" name="dayfirst" value="true"> O2Ring dates are DD/MM</label>
+          <label class="chk"><input type="checkbox" name="auto_sync" value="true" checked> Auto-correct CPAP clock (needs O2Ring; CPAP-only nights reuse the last correction)</label>
           <label class="chk"><input type="checkbox" name="replace" value="true"> Replace nights that already exist</label>
           <label class="wide">Notes <input type="text" name="notes" placeholder="e.g. new mask, late coffee"></label>
         </div>

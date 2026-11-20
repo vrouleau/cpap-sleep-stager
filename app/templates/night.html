@@ -39,6 +39,47 @@
   </div>
 </section>
 
+{% set sy = s.sync %}
+{% if sy and (sy.suggested_offset_s is defined or sy.inherited_from is defined) %}
+<section class="card sync {{ 'warn' if sy.needs_change else 'ok' }}">
+  <div class="head">
+    <div>
+      <h2>CPAP clock <span class="tag ghost">confidence: {{ sy.confidence }}</span></h2>
+      {% if sy.inherited_from is defined %}
+        <p>No O2Ring this night: reused the CPAP clock correction <b>{{ n.cpap_offset_s|offset }}</b>
+           detected on <a href="/nights/{{ sy.inherited_id }}">{{ sy.inherited_from }}</a>.</p>
+      {% endif %}
+      {% if sy.auto_applied_from is defined %}
+        <p>Auto-corrected: CPAP timestamps shifted by <b>{{ n.cpap_offset_s|offset }}</b>
+           to match the O2Ring (phone) clock.</p>
+      {% endif %}
+      {% if sy.dst_suspected %}
+        <p>⏰ About one hour off: the machine most likely missed the daylight-saving change.
+           ResMed machines never adjust for DST.</p>
+      {% endif %}
+      {% if sy.needs_change %}
+        <p>The CPAP clock looks <b>{{ (sy.suggested_offset_s - n.cpap_offset_s)|offset }}</b> off from the O2Ring.
+           Suggested correction: <b>{{ sy.suggested_offset_s|offset }}</b> (currently {{ n.cpap_offset_s|offset }}).</p>
+      {% elif sy.inherited_from is not defined %}
+        <p>Clocks agree within a few seconds{% if n.cpap_offset_s %} after the {{ n.cpap_offset_s|offset }} correction{% endif %}.</p>
+      {% endif %}
+      <p class="muted small">
+        {% if sy.motion %}Mask on/off vs. ring motion: {{ sy.motion.markers_matched }}/{{ sy.motion.markers }} markers matched, {{ sy.motion.prominence }}× stronger than the next-best shift.{% endif %}
+        {% if sy.desat and sy.desat.usable %} SpO₂ check: average nadir {{ sy.desat.nadir_lag_s|int }} s after event end over {{ sy.desat.events_used }} events
+          (expect ~30 s){% if sy.desat_agrees is defined %}: {{ 'agrees' if sy.desat_agrees else 'disagrees, so check manually' }}{% endif %}.{% endif %}
+      </p>
+    </div>
+    {% if sy.needs_change %}
+    <form method="post" action="/nights/{{ n.id }}/reprocess">
+      <input type="hidden" name="engine" value="{{ 'sleepecg' if 'sleepecg' in n.engine else 'heuristic' }}">
+      <input type="hidden" name="offset" value="{{ sy.suggested_offset_s|int }}">
+      <button type="submit">Apply {{ sy.suggested_offset_s|offset }} &amp; re-run</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <section class="card">
   <h2>Timeline</h2>
   <div id="chart" class="chart"></div>
@@ -85,8 +126,10 @@
           <option value="heuristic" {% if n.engine == 'heuristic' %}selected{% endif %}>Heuristic</option>
           <option value="sleepecg" {% if not sleepecg %}disabled{% endif %} {% if 'sleepecg' in n.engine %}selected{% endif %}>sleepecg + resp</option>
         </select></label>
-      <label>O2Ring offset (s) <input type="number" name="offset" value="{{ n.o2ring_offset_s|int }}"></label>
+      <label>CPAP clock correction (s) <input type="number" name="offset" value="{{ n.cpap_offset_s|int }}"
+             title="Added to ResMed timestamps. -3600 = machine still on summer time"></label>
       <label class="chk"><input type="checkbox" name="dayfirst" value="true"> DD/MM dates</label>
+      <label class="chk"><input type="checkbox" name="auto_sync" value="true"> Auto-correct CPAP clock</label>
       <button type="submit">Re-run</button>
     </form>
     <p class="muted small">Files: {{ n.files|join(', ') }}</p>

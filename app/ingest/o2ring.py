@@ -8,7 +8,6 @@ standard oximetry metrics (ODI3/ODI4, T90, nadir, desaturation events).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -27,7 +26,8 @@ def looks_like_o2ring(path: Path) -> bool:
     return path.suffix.lower() in {".csv", ".txt"}
 
 
-def load_o2ring(paths: list[Path], offset_s: float = 0.0, dayfirst: bool = False) -> OximetryNight | None:
+def load_o2ring(paths: list[Path], dayfirst: bool = False) -> OximetryNight | None:
+    """Load and merge O2Ring CSVs. The ring's clock is phone-synced and used as-is."""
     frames = []
     for p in paths:
         try:
@@ -39,8 +39,6 @@ def load_o2ring(paths: list[Path], offset_s: float = 0.0, dayfirst: bool = False
     df = pd.concat(frames).sort_values("time").drop_duplicates("time").reset_index(drop=True)
     if "motion" not in df:
         df["motion"] = float("nan")
-    if offset_s:
-        df["time"] = df["time"] + timedelta(seconds=offset_s)
     cleaned = clean(df)
     metrics = compute_metrics(cleaned, source=", ".join(p.name for p in paths)).to_dict()
     data = cleaned.data[["time", "spo2", "pulse", "motion"]].copy()

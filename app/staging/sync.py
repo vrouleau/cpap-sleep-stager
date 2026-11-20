@@ -1,0 +1,177 @@
+"""Estimate the clock offset between the ResMed machine and the O2Ring.
+
+The O2Ring takes its time from the phone app on every sync, so it is treated as the
+reference clock. ResMed machines never adjust for daylight saving time (AirSense 10
+needs a manual clock change; AirSense 11 has no user-settable clock), so the CPAP is
+the one that drifts or ends up an hour off.
+
+Convention: ``cpap_offset_s`` is ADDED to ResMed timestamps to put them on real (ring)
+time. A machine still on summer time after the fall-back -> offset -3600.
+
+Primary method - mask on/off vs. ring motion
+    Every BRP file starts when the mask goes on and ends when it comes off; both
+    involve hand movement the ring records. We slide the ring's motion trace by up to
+    +/-10 min around 0 and around +/-1 h (DST) and pick the shift that lands the most
+    motion energy right on those instants. Mid-night mask-off/on pairs are the sharpest
+    markers because the rest of the night is still.
+
+Cross-check - event-triggered SpO2
+    Average SpO2 around the end of every ResMed apnea/hypopnea. The finger nadir
+    normally lands ~20-40 s after the event ends (circulation delay), so this can only
+    confirm the motion estimate to within ~+/-15 s, never set it precisely.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+
+SEARCH_S = 600  # +/- 10 minutes around each centre
+SEARCH_CENTRES = (0, 3600, -3600)  # no error, and a missed DST change either way
+MARKER_WIN_S = 6  # motion within +/- this many seconds of a marker counts
+EXPECTED_DESAT_LAG_S = 30.0  # typical apnea-end -> finger SpO2 nadir delay
+APNEA_KINDS = {"Obstructive apnea", "Central apnea", "Apnea", "Hypopnea"}
+
+
+def _ring_seconds(oxi: pd.DataFrame, t0: datetime, col: str) -> pd.Series:
+    """Resample a ring column onto a 1-s grid (seconds since t0, ring clock)."""
+    s = (oxi["time"] - pd.Timestamp(t0)).dt.total_seconds()
+    ser = pd.Series(oxi[col].to_numpy(dtype=float), index=pd.to_timedelta(s, unit="s"))
+    ser = ser[~ser.index.duplicated()].resample("1s").mean()
+    ser.index = ser.index.total_seconds().astype(int)
+    return ser
+
+
+def motion_offset(markers: list[datetime], oxi: pd.DataFrame) -> dict | None:
+    """Residual offset from mask on/off markers (machine clock) vs ring motion."""
+    if not markers or "motion" not in oxi or oxi["motion"].fillna(0).sum() == 0:
+        return None
+    t0 = min(min(markers), oxi["time"].iloc[0].to_pydatetime())
+    mot = _ring_seconds(oxi, t0, "motion").ffill(limit=4).fillna(0.0)
+    if mot.empty:
+        return None
+    # energy = motion smeared over the marker window, normalised by night-level activity
+    energy = np.log1p(mot.clip(lower=0).to_numpy())
+    kernel = np.ones(2 * MARKER_WIN_S + 1)
+    energy = np.convolve(energy, kernel, mode="same")
+    base_idx = int(mot.index[0])
+    m_sec = np.array([(m - t0).total_seconds() for m in markers])
+
+    lags = np.concatenate([np.arange(c - SEARCH_S, c + SEARCH_S + 1) for c in SEARCH_CENTRES])
+    scores = np.zeros(len(lags))
+    hits = np.zeros(len(lags), dtype=int)
+    for k, off in enumerate(lags):
+        idx = (m_sec - off).astype(int) - base_idx  # ring time = machine time - offset
+        ok = (idx >= 0) & (idx < len(energy))
+        vals = energy[idx[ok]]
+        scores[k] = vals.sum()
+        hits[k] = int((vals > 0).sum())
+    if scores.max() <= 0:
+        return None
+    # prefer the smallest |offset| among near-ties (clock errors are usually small)
+    best_val = scores.max()
+    cand = np.where(scores >= best_val * 0.98)[0]
+    best = cand[np.argmin(np.abs(lags[cand]))]
+    off = int(lags[best])
+    # Confidence: how far the peak stands above the best *other* candidate shift
+    # (anything more than 30 s away), and how many markers it explains.
+    far = np.abs(lags - off) > 30
+    runner_up = float(scores[far].max()) if far.any() else 0.0
+    prominence = min(best_val / max(runner_up, 1e-9), 99.0)
+    n_hit = int(hits[best])
+    conf = "high" if (prominence >= 1.5 and n_hit >= 3) else "medium" if prominence >= 1.15 else "low"
+    return {
+        "residual_s": float(off),
+        "markers": len(markers),
+        "markers_matched": n_hit,
+        "prominence": round(float(prominence), 2),
+        "confidence": conf,
+    }
+
+
+def desat_offset(events: list[dict], oxi: pd.DataFrame) -> dict | None:
+    """Residual offset implied by the average SpO2 response to ResMed events."""
+    ev_ends = [e["t"].timestamp() + e["duration_s"] for e in events
+               if e["source"] == "resmed" and e["kind"] in APNEA_KINDS]
+    if len(ev_ends) < 5 or oxi["spo2"].notna().sum() < 100:
+        return None
+    t0 = oxi["time"].iloc[0].to_pydatetime()
+    spo2 = _ring_seconds(oxi, t0, "spo2").interpolate(limit=8, limit_area="inside")
+    base = int(spo2.index[0])
+    arr = spo2.to_numpy()
+    rel = np.arange(-60, 121)
+    curves = []
+    for end in ev_ends:
+        c = int(end - t0.timestamp()) - base
+        idx = c + rel
+        if idx[0] < 0 or idx[-1] >= len(arr):
+            continue
+        seg = arr[idx]
+        if np.isnan(seg).mean() > 0.2:
+            continue
+        curves.append(seg - np.nanmedian(seg[:40]))  # baseline: 60..20 s before end
+    if len(curves) < 5:
+        return None
+    avg = pd.Series(np.nanmean(curves, axis=0)).rolling(7, center=True, min_periods=1).mean()
+    nadir_i = int(avg.idxmin())
+    depth = float(-avg.min())
+    if depth < 1.0:
+        return {"events_used": len(curves), "depth_pct": round(depth, 2), "usable": False}
+    lag = float(rel[nadir_i])
+    return {
+        "events_used": len(curves),
+        "depth_pct": round(depth, 2),
+        "nadir_lag_s": lag,
+        "residual_s": round(EXPECTED_DESAT_LAG_S - lag, 1),
+        "usable": True,
+    }
+
+
+def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
+             current_offset: float) -> dict | None:
+    """Sync report. ``segments``/``events`` must already carry ``current_offset``.
+
+    The helpers above measure how far the *ring* would have to move; the CPAP has to
+    move the same amount the other way.
+    """
+    if oxi is None or oxi.empty or not segments:
+        return None
+    markers = []
+    for s in segments:
+        markers += [s.start, s.end]
+    mo = motion_offset(markers, oxi)
+    if mo:
+        mo["residual_s"] = -mo["residual_s"]  # ring shift -> CPAP correction
+    # Cross-check SpO2 *at the motion-based alignment* (an hour-off clock would hide
+    # every dip otherwise); its residual is then relative to that alignment.
+    pre = mo["residual_s"] if mo else 0.0
+    shifted = [{**e, "t": e["t"] + timedelta(seconds=pre)} for e in events]
+    de = desat_offset(shifted, oxi)
+    if de and "residual_s" in de:
+        de["residual_s"] = round(pre - de["residual_s"], 1)
+    out: dict = {"current_offset_s": current_offset, "motion": mo, "desat": de}
+    if mo:
+        out["suggested_offset_s"] = _snap(current_offset + mo["residual_s"])
+        out["confidence"] = mo["confidence"]
+        if de and de.get("usable"):
+            agree = abs(de["residual_s"] - mo["residual_s"]) <= 20
+            out["desat_agrees"] = bool(agree)
+            if not agree and out["confidence"] == "high":
+                out["confidence"] = "medium"
+    elif de and de.get("usable") and abs(de["residual_s"]) <= SEARCH_S:
+        out["suggested_offset_s"] = _snap(current_offset + de["residual_s"])
+        out["confidence"] = "low"
+    if "suggested_offset_s" in out:
+        out["needs_change"] = abs(out["suggested_offset_s"] - current_offset) >= 4
+        out["dst_suspected"] = abs(abs(out["suggested_offset_s"]) - 3600) <= SEARCH_S
+    return out
+
+
+def _snap(offset: float) -> int:
+    """Within the ring's 4-s sampling of a whole-hour (DST) or zero shift, snap to it."""
+    for target in (0, 3600, -3600):
+        if abs(offset - target) <= 4:
+            return target
+    return int(round(offset))

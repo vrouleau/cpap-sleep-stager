@@ -80,3 +80,6 @@ svg .ev:hover .evline { opacity: 1; stroke-width: 2; }
 .sw.h { background: #d89a1d; width: 3px; } .sw.ua { background: #7f5539; width: 3px; } .sw.other { background: #8a8f9c; width: 3px; }
 .legend label { display: inline-flex; align-items: center; gap: .3rem; margin-left: auto; cursor: pointer; }
 .legend .lg { display: inline-flex; align-items: center; gap: .4rem; }
+.card.sync.warn { border-left: 4px solid #d89a1d; }
+.card.sync.ok { border-left: 4px solid var(--line2); }
+.card.sync p { margin: .3rem 0; }

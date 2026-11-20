@@ -31,7 +31,7 @@ class Night(Base):
     engine: Mapped[str] = mapped_column(String(32), default="heuristic")
     has_resmed: Mapped[bool] = mapped_column(Boolean, default=False)
     has_o2ring: Mapped[bool] = mapped_column(Boolean, default=False)
-    o2ring_offset_s: Mapped[float] = mapped_column(Float, default=0.0)
+    cpap_offset_s: Mapped[float] = mapped_column(Float, default=0.0)
     age: Mapped[int | None] = mapped_column(Integer)
     gender: Mapped[str | None] = mapped_column(String(8))
     notes: Mapped[str | None] = mapped_column(Text)

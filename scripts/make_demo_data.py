@@ -91,7 +91,8 @@ def write_eve(path: Path, start: datetime, events: list[tuple[float, float, str]
     w.close()
 
 
-def make_night(out: Path, evening: datetime, seed: int) -> None:
+def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.0) -> None:
+    """``ring_ahead_s``: how far the simulated O2Ring clock runs ahead of the CPAP."""
     rng = np.random.default_rng(seed)
     hours = rng.uniform(7.0, 8.0)
     n = int(hours * 3600 / EPOCH)
@@ -117,7 +118,10 @@ def make_night(out: Path, evening: datetime, seed: int) -> None:
         flow[int(t * FS): int((t + d) * FS)] *= f
         (events1 if t * FS < cut_a else events2).append((t, d, kind))
 
-    for i, (a, b) in enumerate(((0, cut_a), (cut_b, len(flow)))):
+    blk = FS * 60  # write_brp keeps whole minutes, so files end on a minute boundary
+    segs = ((0, cut_a // blk * blk), (cut_b, cut_b + (len(flow) - cut_b) // blk * blk))
+    markers = [t / FS for ab in segs for t in ab]  # mask on/off instants (CPAP clock, s)
+    for i, (a, b) in enumerate(segs):
         seg_start = evening + timedelta(seconds=a / FS)
         stamp = seg_start.strftime("%Y%m%d_%H%M%S")
         write_brp(folder / f"{stamp}_BRP.edf", seg_start, flow[a:b])
@@ -138,15 +142,18 @@ def make_night(out: Path, evening: datetime, seed: int) -> None:
         hr = mu + hr_slow + rng.normal(0, 0.6)
         spo2 = 96 + rng.normal(0, 0.6)
         for et, d in ev_all:
-            if et + 10 < tt < et + d + 25:
+            if et + d + 15 < tt < et + d + 45:  # finger nadir ~30 s after event end
                 spo2 -= 4.5
                 hr += 4
         motion = 0
-        if s == "W" and rng.random() < 0.5:
+        if any(abs(tt - m) <= 4 for m in markers):
+            motion = int(rng.integers(25, 60))  # hands on the mask
+        elif s == "W" and rng.random() < 0.5:
             motion = int(rng.integers(2, 30))
         elif s == "N" and rng.random() < 0.004:
             motion = int(rng.integers(1, 12))  # position shift
-        rows.append(f"{ts.strftime('%H:%M:%S %b %d %Y')},{int(round(min(spo2, 99)))},"
+        ring_ts = ts + timedelta(seconds=ring_ahead_s)
+        rows.append(f"{ring_ts.strftime('%H:%M:%S %b %d %Y')},{int(round(min(spo2, 99)))},"
                     f"{int(round(hr))},{motion}")
     (out / f"O2Ring_{day}{evening.strftime('%H%M%S')}.csv").write_text("\n".join(rows) + "\n")
     times = [evening + timedelta(seconds=i * EPOCH) for i in range(n)]
@@ -160,11 +167,13 @@ def main():
     ap.add_argument("out", type=Path)
     ap.add_argument("--nights", type=int, default=1)
     ap.add_argument("--start", default="2026-11-12")
+    ap.add_argument("--ring-ahead", type=float, default=0.0,
+                    help="simulate the O2Ring clock running this many seconds ahead")
     args = ap.parse_args()
     d0 = datetime.fromisoformat(args.start)
     for i in range(args.nights):
         ev = d0 + timedelta(days=i, hours=22, minutes=50 + 7 * i)
-        make_night(args.out, ev, seed=1000 + i)
+        make_night(args.out, ev, seed=1000 + i, ring_ahead_s=args.ring_ahead)
         print("wrote night", ev.date())
 
 
