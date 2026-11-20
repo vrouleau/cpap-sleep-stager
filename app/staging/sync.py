@@ -15,6 +15,14 @@ Primary method - mask on/off vs. ring motion
     motion energy right on those instants. Mid-night mask-off/on pairs are the sharpest
     markers because the rest of the night is still.
 
+Anchor - morning mask-off vs ring-off
+    You take the mask and the ring off within a minute or two of each other, so the
+    difference between the last CPAP session's end and the ring's last reading is the
+    clock error to within a few minutes. When it is close to a whole hour (no error, or
+    a missed DST change) the motion search is narrowed to +/-2 min around that hour.
+    Without the anchor the +/-2 h motion search can lock onto a chance cluster of
+    movement 45 or 95 min away on nights with few mask on/off markers.
+
 Cross-check - event-triggered SpO2
     Average SpO2 around the end of every ResMed apnea/hypopnea. The finger nadir
     normally lands ~20-40 s after the event ends (circulation delay), so this can only
@@ -32,6 +40,8 @@ import pandas as pd
 # never resync), on top of a possible 1 h DST error, so search one continuous range.
 SEARCH_S = 7200  # +/- 2 hours
 MARKER_WIN_S = 6  # motion within +/- this many seconds of a marker counts
+ANCHOR_TOL_S = 600  # morning end difference within 10 min of a whole hour -> anchor to it
+ANCHORED_SPAN_S = 120  # then search motion only +/- 2 min around the anchor
 EXPECTED_DESAT_LAG_S = 30.0  # typical apnea-end -> finger SpO2 nadir delay
 APNEA_KINDS = {"Obstructive apnea", "Central apnea", "Apnea", "Hypopnea"}
 
@@ -57,12 +67,21 @@ def coarse_shift(segments, oxi: pd.DataFrame) -> float:
     return c if abs(c) > SEARCH_S else 0.0
 
 
+def end_offset(segments, oxi: pd.DataFrame) -> float | None:
+    """CPAP correction (seconds) implied by the morning: ring's last reading minus the
+    end of the last CPAP session."""
+    valid = oxi.loc[oxi["spo2"].notna() | oxi["pulse"].notna(), "time"]
+    if valid.empty:
+        return None
+    return (valid.iloc[-1].to_pydatetime() - max(s.end for s in segments)).total_seconds()
+
+
 def motion_offset(markers: list[datetime], oxi: pd.DataFrame,
-                  centre: float = 0.0) -> dict | None:
+                  centre: float = 0.0, span: int = SEARCH_S) -> dict | None:
     """Residual offset from mask on/off markers (machine clock) vs ring motion."""
     if not markers or "motion" not in oxi or oxi["motion"].fillna(0).sum() == 0:
         return None
-    t0 = min(min(markers) - timedelta(seconds=abs(centre) + SEARCH_S),
+    t0 = min(min(markers) - timedelta(seconds=abs(centre) + span),
              oxi["time"].iloc[0].to_pydatetime())
     mot = _ring_seconds(oxi, t0, "motion").ffill(limit=4).fillna(0.0)
     if mot.empty:
@@ -74,7 +93,7 @@ def motion_offset(markers: list[datetime], oxi: pd.DataFrame,
     base_idx = int(mot.index[0])
     m_sec = np.array([(m - t0).total_seconds() for m in markers])
 
-    lags = int(round(centre)) + np.arange(-SEARCH_S, SEARCH_S + 1)
+    lags = int(round(centre)) + np.arange(-span, span + 1)
     scores = np.zeros(len(lags))
     hits = np.zeros(len(lags), dtype=int)
     for k, off in enumerate(lags):
@@ -156,10 +175,21 @@ def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
     markers = []
     for s in segments:
         markers += [s.start, s.end]
-    centre = coarse_shift(segments, oxi)
-    mo = motion_offset(markers, oxi, centre)
+    end = end_offset(segments, oxi)
+    hour = round(end / 3600) * 3600 if end is not None else None
+    anchored = end is not None and abs(end - hour) <= ANCHOR_TOL_S and abs(hour) <= 3600
+    if anchored:
+        mo = motion_offset(markers, oxi, centre=-hour, span=ANCHORED_SPAN_S)
+    else:
+        mo = motion_offset(markers, oxi, coarse_shift(segments, oxi))
     if mo:
         mo["residual_s"] = -mo["residual_s"]  # ring shift -> CPAP correction
+        if anchored:
+            # two independent clues agree: the morning end difference says "this hour",
+            # and ring movement lands on the mask on/off instants right there
+            # (a peak on the window edge means the real error lies further out: drift)
+            inside = abs(mo["residual_s"] - hour) < ANCHORED_SPAN_S - 5
+            mo["confidence"] = "high" if inside and mo["markers_matched"] >= 2 else "medium"
     # Cross-check SpO2 *at the motion-based alignment* (an hour-off clock would hide
     # every dip otherwise); its residual is then relative to that alignment.
     pre = mo["residual_s"] if mo else 0.0
@@ -168,14 +198,23 @@ def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
     if de and "residual_s" in de:
         de["residual_s"] = round(pre - de["residual_s"], 1)
     out: dict = {"current_offset_s": current_offset, "motion": mo, "desat": de}
+    if end is not None:
+        out["morning_end_s"] = round(end, 1)
+        out["anchored_hour_s"] = hour if anchored else None
     if mo:
         out["suggested_offset_s"] = _snap(current_offset + mo["residual_s"])
         out["confidence"] = mo["confidence"]
+        if anchored and mo["confidence"] != "high":
+            # movement does not pin it down near the hour: the hour is the better guess
+            out["suggested_offset_s"] = int(current_offset + hour)
         if de and de.get("usable"):
             agree = abs(de["residual_s"] - mo["residual_s"]) <= 20
             out["desat_agrees"] = bool(agree)
             if not agree and out["confidence"] == "high":
                 out["confidence"] = "medium"
+    elif anchored:
+        out["suggested_offset_s"] = int(current_offset + hour)
+        out["confidence"] = "low"
     elif de and de.get("usable") and abs(de["residual_s"]) <= 600:
         out["suggested_offset_s"] = _snap(current_offset + de["residual_s"])
         out["confidence"] = "low"

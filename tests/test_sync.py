@@ -97,3 +97,37 @@ def test_travel_time_zone(travel_dir):
     assert abs(r["offset_used"] - (6 * 3600 + 190)) <= 4
     assert r["sync"]["timezone_suspected"]
     assert r["epochs"]["t"].iloc[0].hour == 22  # timeline in local (Paris) time
+
+
+def test_morning_end_anchors_missed_dst():
+    """CPAP an hour behind (as before the Nov 1 fall-back on a real machine). A chance
+    cluster of movement lines up better with the mask markers at +46 min; the morning
+    mask-off vs ring-off difference must keep the estimate on the hour."""
+    from datetime import datetime, timedelta
+
+    import numpy as np
+    import pandas as pd
+
+    from app.ingest.resmed import FlowSegment
+    from app.staging import sync
+
+    def seg(start, minutes):
+        return FlowSegment(source="x", start=start, fs=25, flow=np.zeros(int(minutes * 60 * 25)))
+
+    segs = [seg(datetime(2026, 10, 28, 20, 11), 220), seg(datetime(2026, 10, 29, 0, 2), 240)]
+    true_off = 3600  # ring (real) time = CPAP time + 1 h
+    t = pd.date_range("2026-10-28 21:05", "2026-10-29 05:04:20", freq="4s")
+    ring = pd.DataFrame({"time": t, "spo2": 95.0, "pulse": 58.0, "motion": 0.0})
+
+    def burst(at, size):
+        ring.loc[(ring.time - at).abs() <= pd.Timedelta("8s"), "motion"] = size
+
+    for s_ in segs:
+        for m in (s_.start, s_.end):
+            burst(m + timedelta(seconds=true_off), 20)
+            burst(m + timedelta(seconds=2748), 60)  # decoy, stronger
+    ring = ring[ring.time <= max(s_.end for s_ in segs) + timedelta(seconds=true_off + 40)]
+    out = sync.estimate(segs, [], ring, 0.0)
+    assert out["anchored_hour_s"] == 3600
+    assert abs(out["suggested_offset_s"] - true_off) <= 8
+    assert out["confidence"] == "high" and out["dst_suspected"]
