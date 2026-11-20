@@ -89,6 +89,7 @@
     onset: n => clockMin(n.s.sleep_onset),
     wake: n => clockMin(n.s.final_wake),
     hr: n => num(n.s.hr_sleep_mean),
+    arousal_idx: n => (n.ring ? num(n.s.arousal_index) : null),
     deep_pct: n => num(n.s.deep_pct_tst),
     rem_pct: n => num(n.s.rem_pct_tst),
     ahi: n => (n.cpap ? num(n.s.ahi_sleep) : null),
@@ -358,6 +359,7 @@
       tile('Awake after falling asleep', fmtOr(avgOf(nights, 'waso'), F.min.v), 'average per night'),
       tile('REM', fmtOr(avgOf(nights, 'rem_pct'), F.pct.v), 'of sleep'),
       tile('Deep (est.)', fmtOr(deepAvg, F.pct.v), ring.length ? 'of sleep, O2Ring nights' : 'needs the O2Ring'),
+      tile('Arousals', fmtOr(avgOf(ring, 'arousal_idx'), v => `${v.toFixed(1)} / h`), ring.length ? 'brief, still asleep · O2Ring nights' : 'needs the O2Ring'),
     ];
     const cards = [
       card('Sleep stages', 'Hours per night. Deep sleep is an estimate and needs the O2Ring.', stages,
@@ -372,7 +374,7 @@
     if (ring.length) cards.push(card('Pulse while asleep', 'Average pulse during sleep (O2Ring nights).', null,
       p => line(p, bks, { key: 'hr', label: 'pulse', color: css('--line1') }, F.bpm, { minSpan: 4 })));
     const cols = [['Asleep', cell('tst', hours)], ['Efficiency', cell('eff', F.pct.v)], ['Awake (WASO)', cell('waso', F.min.v)],
-      ['Light', cell('light', hours)], ['Deep', cell('deep', hours)], ['REM', cell('rem', hours)], ['Pulse', cell('hr', F.bpm.v)]];
+      ['Light', cell('light', hours)], ['Deep', cell('deep', hours)], ['REM', cell('rem', hours)], ['Arousals / h', cell('arousal_idx', v => v.toFixed(1))], ['Pulse', cell('hr', F.bpm.v)]];
     return { tiles, cards, cols };
   }
 
