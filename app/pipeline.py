@@ -7,6 +7,7 @@ import shutil
 import zipfile
 from collections import defaultdict
 from dataclasses import dataclass, field
+from dataclasses import replace as replace_opts
 from datetime import date, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
@@ -294,18 +295,33 @@ def save_night(night_date: date, paths: list[Path], opts: ProcessOptions,
                replace: bool = True, notes: str | None = None) -> tuple[Night | None, str]:
     with SessionLocal() as db:
         existing = db.query(Night).filter_by(night_date=night_date).one_or_none()
-        if existing and not replace:
-            return existing, "skipped (already exists)"
-        # move files into the night's permanent folder (kept for re-processing)
         night_dir = UPLOAD_ROOT / night_date.isoformat()
-        if existing and night_dir.exists():
-            # merge: keep previous files that are not being replaced by name
-            pass
+        added = len(paths)
+        if existing:
+            if not replace:
+                # Without "replace", an existing night still takes files it doesn't have
+                # yet - e.g. the O2Ring recording imported after the SD card - and is
+                # re-analysed with them; files it already has are left alone.
+                have = set(existing.files or [])
+                if night_dir.exists():
+                    have |= {q.name for q in night_dir.iterdir() if q.is_file()}
+                paths = [p for p in paths if p.name not in have]
+                added = len(paths)
+                if not paths:
+                    return existing, "skipped (already imported)"
+            if not opts.cpap_offset_s and existing.cpap_offset_s:
+                # keep this night's CPAP clock correction unless one was given
+                opts = replace_opts(opts, cpap_offset_s=existing.cpap_offset_s)
+        # move files into the night's permanent folder (kept for re-processing); files
+        # already there with the same name are replaced, everything else is kept
         new_dir = not night_dir.exists()
         night_dir.mkdir(parents=True, exist_ok=True)
         for p in paths:
+            dest = night_dir / p.name
             if p.parent != night_dir:
-                shutil.move(str(p), night_dir / p.name)
+                if dest.exists():
+                    dest.unlink()
+                shutil.move(str(p), dest)
         all_paths = sorted(q for q in night_dir.iterdir() if q.is_file())
         opts, inherited = _maybe_inherit(db, night_date, all_paths, opts)
         result = analyze(all_paths, opts)
@@ -324,7 +340,9 @@ def save_night(night_date: date, paths: list[Path], opts: ProcessOptions,
             night.notes = notes
         db.add(night)
         db.commit()
-        return night, "replaced" if existing else "created"
+        if not existing:
+            return night, "created"
+        return night, "replaced" if replace else f"updated (+{added} file{'s' if added != 1 else ''})"
 
 
 def _fill(night: Night, result: dict, opts: ProcessOptions, paths: list[Path]) -> None:
