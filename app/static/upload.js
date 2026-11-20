@@ -17,9 +17,13 @@
   const BATCH_BYTES = 40 * 1024 * 1024;
 
   let found = [];  // {file, kind, night}
-  let existing = new Set();
-  fetch('/api/nights').then(r => r.json()).then(ns => { existing = new Set(ns.map(n => n.night_date)); render(); })
-    .catch(() => {});
+  // night date -> the files it already has, so an existing night can still take a
+  // device it is missing (e.g. the O2Ring folder imported after the SD card)
+  let existing = new Map();
+  fetch('/api/nights').then(r => r.json()).then(ns => {
+    existing = new Map(ns.map(n => [n.night_date, new Set(n.files || [])])); render();
+  }).catch(() => {});
+  const isNew = f => !f.night || !existing.has(f.night) || !existing.get(f.night).has(f.file.name);
 
   // nights run noon to noon and are named after the evening they start
   const nightOf = (y, mo, d, h) => {
@@ -93,7 +97,7 @@
   // ---- summary ----
   const replace = () => form.querySelector('[name=replace]').checked;
   const usable = () => found.filter(f => f.kind !== 'ignored');
-  const toSend = () => usable().filter(f => !f.night || replace() || !existing.has(f.night));
+  const toSend = () => usable().filter(f => replace() || isNew(f));
   const fmtMB = b => b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' kB';
 
   function render() {
@@ -106,6 +110,9 @@
     const nights = [...new Set(usable().filter(f => f.night).map(f => f.night))].sort();
     const old = nights.filter(d => existing.has(d));
     const fresh = nights.filter(d => !existing.has(d));
+    // existing nights this upload adds files to (a second device, a missing session)
+    const grow = old.filter(d => usable().some(f => f.night === d && isNew(f)));
+    const done = old.filter(d => !grow.includes(d));
     const send = toSend();
     const row = (ok, text) => `<li class="${ok ? 'ok' : 'no'}">${ok ? '✓' : '–'} ${text}</li>`;
     const range = ds => ds.length ? (ds.length > 1 ? `${ds[0]} → ${ds[ds.length - 1]}` : ds[0]) : '';
@@ -116,9 +123,9 @@
       ${n('zip') ? row(true, `<b>${n('zip')}</b> zip file${n('zip') > 1 ? 's' : ''} (unpacked on the server)`) : ''}
       ${row(nights.length, `<b>${nights.length}</b> night${nights.length === 1 ? '' : 's'} ${range(nights)}`)}
     </ul>
-    ${old.length ? `<p class="muted small">${old.length} of them already imported${replace()
-      ? ': they will be replaced (your wake-log entries are kept).'
-      : ' and will be skipped. Tick <i>Replace nights that already exist</i> in Options to re-import them.'}</p>` : ''}
+    ${old.length && replace() ? `<p class="muted small">${old.length} of them already imported: they will be replaced (your wake-log entries are kept).</p>` : ''}
+    ${grow.length && !replace() ? `<p class="muted small">${grow.length} already-imported night${grow.length === 1 ? '' : 's'} get${grow.length === 1 ? 's' : ''} new files and will be re-analysed: ${range(grow)}.</p>` : ''}
+    ${done.length && !replace() ? `<p class="muted small">${done.length} night${done.length === 1 ? ' is' : 's are'} already fully imported and will be skipped. Tick <i>Replace nights that already exist</i> in Options to re-import ${done.length === 1 ? 'it' : 'them'}.</p>` : ''}
     ${fresh.length && old.length ? `<p class="muted small">New: ${range(fresh)}</p>` : ''}
     <p class="muted small">${n('ignored')} other file${n('ignored') === 1 ? '' : 's'} not needed (settings, STR.edf, PLD/SAD/CSL, …).
       To upload: ${send.length} file${send.length === 1 ? '' : 's'}, ${fmtMB(send.reduce((a, f) => a + f.file.size, 0))}.</p>`;

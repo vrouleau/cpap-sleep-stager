@@ -262,3 +262,29 @@ def test_app_version_label(monkeypatch):
     with TestClient(main.app) as c:
         assert main.APP_VERSION["label"] in c.get("/import").text
         assert c.get("/api/health").json()["version"] == main.APP_VERSION["label"]
+
+
+def test_second_device_added_to_existing_night(demo_dir):
+    """SD card imported first, O2Ring folder later (no 'replace'): the existing CPAP
+    night must take the ring recording, not skip it."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    def post(paths):
+        files = [("files", (p.name, p.read_bytes(), "application/octet-stream")) for p in paths]
+        r = c.post("/api/nights", files=files, data={"replace": "false", "auto_sync": "true"})
+        assert r.status_code == 200, r.text
+        return r.json()[0]
+
+    with TestClient(app) as c:
+        first = post(_files(demo_dir, "edf"))
+        assert first["status"] == "created"
+        d = c.get(f"/api/nights/{first['id']}").json()
+        assert d["has_resmed"] and not d["has_o2ring"]
+        second = post(_files(demo_dir, "csv"))
+        assert second["id"] == first["id"] and second["status"] == "updated (+1 file)"
+        d = c.get(f"/api/nights/{first['id']}").json()
+        assert d["has_resmed"] and d["has_o2ring"] and len(d["files"]) == 5
+        assert post(_files(demo_dir, "csv"))["status"] == "skipped (already imported)"
+        c.delete(f"/api/nights/{first['id']}")
