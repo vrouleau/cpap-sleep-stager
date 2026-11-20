@@ -23,10 +23,10 @@ Prebuilt images are published to the GitHub container registry for Intel/AMD and
 mkdir sleep-stager && cd sleep-stager
 curl -O https://raw.githubusercontent.com/vrouleau/cpap-sleep-stager/main/docker-compose.yml
 docker compose pull && docker compose up -d
-# → http://<nas-address>:8000
+# → http://<host>:8000
 ```
 
-Update the same way (`docker compose pull && docker compose up -d`). Data lives in `./data`: `sleep.db` plus the original uploaded files, kept so a night can be re-analysed after an algorithm change or a clock fix. Database changes between versions are applied automatically at start-up. SQLite is the default. Set `DATABASE_URL` to use Postgres (add `psycopg[binary]` to `requirements.txt`).
+Set `TZ` in `docker-compose.yml` to your time zone. Update the same way (`docker compose pull && docker compose up -d`). Data lives in `./data`: `sleep.db` plus the original uploaded files, kept so a night can be re-analysed after an algorithm change or a clock fix. Database changes between versions are applied automatically at start-up. SQLite is the default. Set `DATABASE_URL` to use Postgres (add `psycopg[binary]` to `requirements.txt`).
 
 | Image tag | What it is |
 |---|---|
@@ -34,8 +34,6 @@ Update the same way (`docker compose pull && docker compose up -d`). Data lives 
 | `0.2.0`, `0.2` | a fixed release, to stay on or roll back to |
 | `edge` | the current `main` branch |
 | `…-sleepecg` | any of the above with the optional sleepecg engine (Intel/AMD only, ~600 MB larger) |
-
-**TerraMaster (TOS):** install *Docker Manager* (or *Docker Engine*) from the App Center, put `docker-compose.yml` in a shared folder (e.g. `/Volume1/docker/sleep-stager`), then run the two commands above there over SSH, or create a project from that file in Docker Manager's *Compose* section. Set `TZ` in the file to your time zone.
 
 **The app has no login.** Keep it on your LAN, or put it behind a reverse proxy with authentication: it holds health data.
 
