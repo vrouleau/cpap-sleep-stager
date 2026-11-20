@@ -48,3 +48,34 @@ def test_cpap_only_long_rem_is_not_wake():
     spans = [("N", 300), ("R", 60), ("N", 200), ("R", 70), ("N", 60)]
     out = stage(_cpap_night(rng, spans))
     assert out["stage"].iloc[10:-10].eq("Awake").mean() < 0.03
+
+
+def test_deep_sleep_estimate_needs_ring():
+    """A 40-min stretch with the night's lowest, steadiest pulse and very regular
+    breathing (as on a real night, 01:17-02:06) is marked deep; ordinary NREM is not,
+    and without the ring the estimate is unknown (NaN), not zero."""
+    rng = np.random.default_rng(3)
+    spans = [("N", 240), ("N", 80), ("R", 30), ("N", 300)]  # second span: the calm one
+    df = _cpap_night(rng, spans)
+    edges = np.cumsum([0] + [n for _, n in spans])
+    n = len(df)
+    hr = 58 + rng.normal(0, 1.5, n)
+    hr_std = np.abs(2.0 + rng.normal(0, 0.4, n))
+    calm = slice(edges[1], edges[2])
+    hr[calm] = 53.5 + rng.normal(0, 0.4, edges[2] - edges[1])
+    hr_std[calm] = np.abs(1.0 + rng.normal(0, 0.15, edges[2] - edges[1]))
+    cv, acv = df["breath_cv"].to_numpy().copy(), df["amp_cv"].to_numpy().copy()
+    cv[calm] = np.abs(0.05 + rng.normal(0, 0.01, edges[2] - edges[1]))
+    acv[calm] = np.abs(0.06 + rng.normal(0, 0.01, edges[2] - edges[1]))
+    df["breath_cv"], df["amp_cv"] = cv, acv
+    rem = slice(edges[2], edges[3])
+    hr[rem] += 3
+    df["hr"], df["hr_std"], df["spo2"], df["motion"] = hr, hr_std, 95.0, 0.0
+    df.loc[[60, 600], "motion"] = 40.0  # a couple of position shifts
+    out = stage(df)
+    deep = out["deep"].to_numpy() > 0
+    assert deep[edges[1] + 10: edges[2] - 10].mean() > 0.9
+    assert deep[: edges[1] - 10].mean() < 0.1 and deep[edges[3] + 10:].mean() < 0.1
+    assert not deep[out["stage"].to_numpy() != "NREM"].any()
+    # CPAP only: no estimate
+    assert stage(_cpap_night(rng, spans))["deep"].isna().all()

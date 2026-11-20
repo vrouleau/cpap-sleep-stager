@@ -66,6 +66,7 @@ class Epoch(Base):
     motion: Mapped[float | None] = mapped_column(Float)
     wake_score: Mapped[float | None] = mapped_column(Float)
     rem_score: Mapped[float | None] = mapped_column(Float)
+    deep: Mapped[float | None] = mapped_column(Float)  # 1 = deep NREM, NaN = unknown (no ring)
     night: Mapped[Night] = relationship(back_populates="epochs")
 
 
@@ -81,7 +82,7 @@ class Event(Base):
 
 
 EPOCH_FIELDS = ["resp_rate", "breath_cv", "amp_cv", "flow_present", "resp_events", "hr",
-                "hr_std", "spo2", "spo2_min", "motion", "wake_score", "rem_score"]
+                "hr_std", "spo2", "spo2_min", "motion", "wake_score", "rem_score", "deep"]
 
 
 def init_db() -> None:
@@ -92,3 +93,5 @@ def init_db() -> None:
     with engine.begin() as conn:
         if "wake_log" not in cols:
             conn.execute(text("ALTER TABLE nights ADD COLUMN wake_log JSON"))
+        if "deep" not in {c["name"] for c in inspect(engine).get_columns("epochs")}:
+            conn.execute(text("ALTER TABLE epochs ADD COLUMN deep FLOAT"))

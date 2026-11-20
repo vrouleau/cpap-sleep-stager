@@ -47,7 +47,7 @@
     <h2>Trend</h2>
     {% if trend %}
       <div id="trend" class="trend"></div>
-      <div class="legend"><span class="sw awake"></span>Awake <span class="sw nrem"></span>NREM <span class="sw rem"></span>REM</div>
+      <div class="legend"><span class="sw awake"></span>Awake <span class="sw rem"></span>REM <span class="sw nrem"></span>NREM <span class="sw deep"></span>Deep (est.)</div>
     {% else %}
       <p class="muted">No nights yet. Upload one to start building history.</p>
     {% endif %}
@@ -60,7 +60,7 @@
   <div class="tablewrap">
   <table class="hist">
     <thead><tr><th>Night</th><th>Sources</th><th>In bed</th><th>Asleep</th><th>Eff.</th>
-      <th>NREM</th><th>REM</th><th>REM lat.</th><th>WASO</th><th>AHI</th><th>ODI4</th><th>SpO₂ min</th></tr></thead>
+      <th>NREM</th><th>Deep</th><th>REM</th><th>REM lat.</th><th>WASO</th><th>AHI</th><th>ODI4</th><th>SpO₂ min</th></tr></thead>
     <tbody>
     {% for n in nights %}{% set s = n.summary %}
       <tr onclick="location.href='/nights/{{ n.id }}'">
@@ -68,7 +68,7 @@
         <td>{% if n.has_resmed %}<span class="tag">CPAP</span>{% endif %}{% if n.has_o2ring %}<span class="tag">O2Ring</span>{% endif %}</td>
         <td>{{ s.tib_min|hm }}</td><td>{{ s.tst_min|hm }}</td>
         <td>{{ s.sleep_efficiency or '–' }}%</td>
-        <td>{{ s.nrem_pct_tst or '–' }}%</td><td>{{ s.rem_pct_tst or '–' }}%</td>
+        <td>{{ s.nrem_pct_tst or '–' }}%</td><td>{{ (s.deep_pct_tst ~ '%') if s.deep_pct_tst is defined else '–' }}</td><td>{{ s.rem_pct_tst or '–' }}%</td>
         <td>{{ s.rem_latency_min|hm }}</td><td>{{ s.waso_min|hm }}</td>
         <td>{{ s.ahi_sleep if s.ahi_sleep is not none else '–' }}</td>
         <td>{{ s.odi4 if s.odi4 is not none else '–' }}</td>

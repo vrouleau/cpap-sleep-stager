@@ -36,6 +36,8 @@
     <div class="tile awake"><b>{{ s.awake_min|hm }}</b><span>awake · WASO {{ s.waso_min|hm }}</span></div>
     <div class="tile nrem"><b>{{ s.nrem_min|hm }}</b><span>NREM · {{ s.nrem_pct_tst or 0 }}% of sleep</span></div>
     <div class="tile rem"><b>{{ s.rem_min|hm }}</b><span>REM · {{ s.rem_pct_tst or 0 }}% · {{ s.rem_periods or 0 }} periods</span></div>
+    {% if s.deep_min is defined %}<div class="tile deep"><b>{{ s.deep_min|hm }}</b><span>deep (est.) · {{ s.deep_pct_tst }}% of sleep · {{ s.deep_periods }} period{{ 's' if s.deep_periods != 1 }}</span></div>
+    {% elif n.has_resmed %}<div class="tile deep muted-tile"><b>–</b><span>deep sleep needs the O2Ring's pulse</span></div>{% endif %}
     <div class="tile"><b>{{ s.rem_latency_min|hm }}</b><span>REM latency · onset {{ s.sol_min|hm }}</span></div>
     {% if s.ahi_sleep is defined and s.ahi_sleep is not none %}<div class="tile"><b>{{ s.ahi_sleep }}</b><span>AHI (ResMed events / h sleep)</span></div>{% endif %}
     {% if s.odi4 is defined and s.odi4 is not none %}<div class="tile"><b>{{ s.odi4 }}</b><span>ODI 4% · SpO₂ min {{ s.spo2_min }}%</span></div>{% endif %}
@@ -95,7 +97,7 @@
 <section class="card">
   <h2>Timeline</h2>
   <div id="chart" class="chart"></div>
-  <div class="legend"><span class="sw awake"></span>Awake <span class="sw nrem"></span>NREM <span class="sw rem"></span>REM
+  <div class="legend"><span class="sw awake"></span>Awake <span class="sw rem"></span>REM <span class="sw nrem"></span>NREM{% if s.deep_min is defined %} <span class="sw deep"></span>Deep (est.){% endif %}
     <span class="lg" data-ev="oa"><span class="sw oa"></span>Obstructive</span>
     <span class="lg" data-ev="ca"><span class="sw ca"></span>Central</span>
     <span class="lg" data-ev="h"><span class="sw h"></span>Hypopnea</span>

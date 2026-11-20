@@ -1,7 +1,8 @@
 /* Dependency-free SVG charts: night timeline (hypnogram + overlays) and history trend. */
 const NS = 'http://www.w3.org/2000/svg';
-const COLORS = { Awake: 'var(--awake)', NREM: 'var(--nrem)', REM: 'var(--rem)' };
-const ROW = { Awake: 0, REM: 1, NREM: 2 };
+const COLORS = { Awake: 'var(--awake)', NREM: 'var(--nrem)', REM: 'var(--rem)', Deep: 'var(--deep)' };
+// deep NREM (estimate, ring nights only) gets its own row under NREM
+const shown = e => (e.stage === 'NREM' && e.deep > 0 ? 'Deep' : e.stage);
 
 function el(tag, attrs = {}, parent) {
   const e = document.createElementNS(NS, tag);
@@ -12,13 +13,15 @@ function el(tag, attrs = {}, parent) {
 const hhmm = t => t.toTimeString().slice(0, 5);
 
 function renderNight(host, d) {
-  const ep = d.epochs.map(e => ({ ...e, t: new Date(e.t) }));
+  const ep = d.epochs.map(e => ({ ...e, t: new Date(e.t), st: shown(e) }));
+  const hasDeep = ep.some(e => e.deep != null);
+  const ROWS = hasDeep ? ['Awake', 'REM', 'NREM', 'Deep'] : ['Awake', 'REM', 'NREM'];
   if (!ep.length) return;
   const epochMs = d.epoch_s * 1000;
   const t0 = ep[0].t.getTime(), t1 = ep[ep.length - 1].t.getTime() + epochMs;
   const events = d.events.map(e => ({ ...e, t: new Date(e.t) }));
 
-  const panels = [{ key: 'hyp', h: 110, label: 'Stage' }];
+  const panels = [{ key: 'hyp', h: hasDeep ? 140 : 110, label: 'Stage' }];
   const has = k => ep.some(e => e[k] != null);
   if (has('hr')) panels.push({ key: 'hr', h: 70, label: 'Pulse bpm', color: 'var(--line1)' });
   if (has('spo2')) panels.push({ key: 'spo2', h: 60, label: 'SpO₂ %', color: 'var(--line2)', min: 85, max: 100 });
@@ -38,14 +41,14 @@ function renderNight(host, d) {
       el('rect', { x: L, y: y0, width: W - L - R, height: p.h, class: 'pbg' }, svg);
       if (p.key !== 'hyp') el('text', { x: L + 6, y: y0 + 13, class: 'plabel' }, svg).textContent = p.label;
       if (p.key === 'hyp') {
-        const rh = p.h / 3;
-        ['Awake', 'REM', 'NREM'].forEach((s, i) =>
+        const rh = p.h / ROWS.length;
+        ROWS.forEach((s, i) =>
           (el('text', { x: L - 6, y: y0 + rh * i + rh / 2 + 4, class: 'axis end' }, svg).textContent = s));
         let i = 0;
         while (i < ep.length) {
-          let j = i; while (j < ep.length && ep[j].stage === ep[i].stage) j++;
-          const s = ep[i].stage;
-          el('rect', { x: x(ep[i].t.getTime()), y: y0 + ROW[s] * rh + 2,
+          let j = i; while (j < ep.length && ep[j].st === ep[i].st) j++;
+          const s = ep[i].st;
+          el('rect', { x: x(ep[i].t.getTime()), y: y0 + ROWS.indexOf(s) * rh + 2,
             width: Math.max(1, x(ep[i].t.getTime() + (j - i) * epochMs) - x(ep[i].t.getTime())),
             height: rh - 4, fill: COLORS[s], rx: 2 }, svg);
           i = j;
@@ -112,7 +115,7 @@ function renderNight(host, d) {
       cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.setAttribute('visibility', 'visible');
       const f = (v, n = 0) => v == null ? '–' : (+v).toFixed(n);
       const near = events.filter(v => Math.abs(v.t - t) < 60e3).map(v => v.kind);
-      tip.innerHTML = `<b>${e.t.toTimeString().slice(0, 8)}</b> <span class="pill ${e.stage.toLowerCase()}">${e.stage}</span><br>` +
+      tip.innerHTML = `<b>${e.t.toTimeString().slice(0, 8)}</b> <span class="pill ${e.st.toLowerCase()}">${e.st}</span><br>` +
         `HR ${f(e.hr)} · SpO₂ ${f(e.spo2)} · RR ${f(e.resp_rate, 1)}<br>irreg ${f(e.breath_cv, 2)} · motion ${f(e.motion)}` +
         (near.length ? `<br>${near.join(', ')}` : '');
       tip.style.display = 'block';
@@ -160,10 +163,12 @@ function renderTrend(host, rows) {
     rows.forEach((r, i) => {
       let base = 0;
       const w = Math.max(2, Math.min(bw * 0.75, 40)), xx = L + 2 + i * bw + (bw - w) / 2;
-      for (const [k, s] of [['nrem_min', 'NREM'], ['rem_min', 'REM'], ['awake_min', 'Awake']]) {
-        const v = r.s[k] || 0;
+      const part = { deep: r.s.deep_min || 0, light: (r.s.nrem_min || 0) - (r.s.deep_min || 0),
+        rem: r.s.rem_min || 0, awake: r.s.awake_min || 0 };
+      for (const [k, s] of [['deep', 'Deep'], ['light', 'NREM'], ['rem', 'REM'], ['awake', 'Awake']]) {
+        const v = part[k];
         const rect = el('rect', { x: xx, y: y(base + v), width: w, height: y(base) - y(base + v), fill: COLORS[s] }, svg);
-        el('title', {}, rect).textContent = `${r.d} · ${s} ${Math.round(v)} min`;
+        el('title', {}, rect).textContent = `${r.d} · ${s === 'NREM' && r.s.deep_min != null ? 'Light NREM' : s} ${Math.round(v)} min`;
         base += v;
       }
       const a = el('a', { href: `/nights/${r.id}` }, svg);

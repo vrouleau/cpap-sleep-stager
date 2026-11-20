@@ -80,10 +80,11 @@ def _night_dict(n: Night, with_epochs: bool = False) -> dict:
 def _segments(n: Night) -> list[dict]:
     out = []
     for e in n.epochs:
-        if out and out[-1]["stage"] == e.stage:
+        st = "Deep" if e.stage == "NREM" and e.deep and e.deep > 0 else e.stage
+        if out and out[-1]["stage"] == st:
             out[-1]["epochs"] += 1
         else:
-            out.append({"stage": e.stage, "start": e.t, "epochs": 1})
+            out.append({"stage": st, "start": e.t, "epochs": 1})
     from datetime import timedelta
     for s in out:
         s["end"] = s["start"] + timedelta(seconds=s["epochs"] * EPOCH_S)

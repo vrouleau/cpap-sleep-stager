@@ -23,6 +23,8 @@ For each 30-second epoch it computes features over a 2-minute window, then stage
 
 All thresholds are relative to the night itself (robust z-scores), so the rules adapt to you. It also works with only one source, though less accurately: CPAP-only cannot really separate quiet wake from REM, and O2Ring-only has no breathing data.
 
+**Deep sleep (estimate, needs the ring):** within NREM, stretches with the night's lowest and steadiest pulse, very regular breathing and no movement, lasting 10 min or more, are marked *Deep*. It is a 4th row on the timeline, a tile and a column in the history. Breathing alone was tried and did not agree with the ring-based estimate at all, so CPAP-only nights get none. This is not validated against EEG, and pulse has a natural low in the early morning, so late bouts may be calm light sleep rather than true N3. Read it as "your calmest NREM".
+
 **CPAP only (no ring):** a long period of lying awake with the mask on leaves no movement or mask-off marker, but the breathing changes. On real nights with a known awake period it dropped from about 21 to 13 breaths/min and became about twice as irregular for hours, then switched back when sleep returned. So 20 minutes or more of breathing that is at least 15% slower than the night's sleep rate *and* irregular counts as awake, and the awake period grows through short sleep-like gaps (`bw_*` in `DEFAULTS`). REM is irregular too, but it does not slow down like this, and it is rarely that long.
 
 ### Your wake log

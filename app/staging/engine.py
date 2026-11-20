@@ -40,6 +40,10 @@ DEFAULTS = {
     "bw_grow_frac": 0.35,  # a seeded period grows while >= 35 % stays off-baseline
     "bw_min_core_epochs": 40,  # seeds must last >= 20 min (REM bouts rarely look like this)
     "bw_bridge_epochs": 30,  # sleep-like gaps <= 15 min inside a wake period are wake too
+    # deep sleep (N3-like) estimate inside NREM, needs the ring's pulse (see _deep)
+    "deep_core": 0.55,  # calm score that starts a deep bout...
+    "deep_core_epochs": 20,  # ...held for >= 10 min
+    "deep_grow": 0.3,  # the bout extends while the score stays above this
 }
 
 
@@ -117,6 +121,51 @@ def _breathing_wake(df: pd.DataFrame, seed: np.ndarray, p: dict) -> np.ndarray:
             wake[s_:e_] = True
     wake |= anchor & np.convolve(wake, np.ones(3), "same").astype(bool)
     return wake
+
+
+def _rz_ref(x: pd.Series, ref: pd.Series) -> pd.Series:
+    """Robust z-score against the epochs selected by ``ref`` (e.g. sleep only)."""
+    x = x.astype(float)
+    r = x[ref.to_numpy()].dropna()
+    if len(r) < 20:
+        return pd.Series(0.0, index=x.index)
+    med = r.median()
+    scale = max((r - med).abs().median() * 1.4826, (r.quantile(0.9) - r.quantile(0.1)) / 2.56, 1e-9)
+    return ((x - med) / scale).clip(-5, 5).fillna(0.0)
+
+
+def _deep(df: pd.DataFrame, labels: np.ndarray, moving: np.ndarray, p: dict) -> np.ndarray:
+    """Deep-sleep (N3-like) estimate within NREM.
+
+    Deep sleep is the calmest NREM: the night's lowest and steadiest pulse, very regular
+    breathing, no movement, in bouts of 10 min or more. The score compares each epoch
+    with this night's sleep (pulse 0.4, pulse variability 0.3, breathing irregularity
+    0.3 when the CPAP is there), smoothed over 5 min; a bout starts where it stays high
+    for 10 min and extends while it stays moderately high.
+
+    Needs the ring: on nights with both devices, breathing regularity alone did not
+    agree with the pulse-based estimate at all, so CPAP-only nights get none. Not
+    validated against EEG; pulse also has a circadian low in the early morning, so late
+    bouts may be calm light sleep rather than true N3.
+    """
+    sleep = pd.Series(labels != WAKE, index=df.index)
+    hr = df["hr"].rolling(3, center=True, min_periods=1).median()
+    parts, w = [_rz_ref(hr, sleep), _rz_ref(df["hr_std"], sleep)], [0.4, 0.3]
+    if df["breath_cv"].notna().any():
+        parts.append(_rz_ref(df["breath_cv"] * 0.6 + df["amp_cv"] * 0.4, sleep))
+        w.append(0.3)
+    calm = -sum(wi * pi for wi, pi in zip(w, parts)) / sum(w)
+    score = calm.rolling(10, center=True, min_periods=3).mean().to_numpy()
+    nrem = labels == NREM
+    seed = np.zeros(len(df), dtype=bool)
+    for s_, e_, lb in _runs(nrem & (score > p["deep_core"]) & ~moving):
+        if lb and e_ - s_ >= p["deep_core_epochs"]:
+            seed[s_:e_] = True
+    deep = np.zeros(len(df), dtype=bool)
+    for s_, e_, lb in _runs(nrem & (score > p["deep_grow"]) & ~moving):
+        if lb and seed[s_:e_].any():
+            deep[s_:e_] = True
+    return deep
 
 
 def stage(epochs: pd.DataFrame, params: dict | None = None,
@@ -227,6 +276,8 @@ def stage(epochs: pd.DataFrame, params: dict | None = None,
 
     df["stage"] = labels
     df.loc[no_data.to_numpy(), "stage"] = WAKE
+    # deep-sleep flag inside NREM: 1/0 with the ring, NaN (unknown) without it
+    df["deep"] = _deep(df, df["stage"].to_numpy(), moving.to_numpy(), p).astype(float)         if has_oxi else np.nan
     df["wake_score"] = wake_score.round(3)
     df["rem_score"] = rem_score.round(3)
     df["no_data"] = no_data.to_numpy()

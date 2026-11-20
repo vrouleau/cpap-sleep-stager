@@ -230,6 +230,11 @@ def summarize(epochs: pd.DataFrame, events: list[dict], oxi: dict | None) -> dic
     )
     s["nrem_pct_tst"] = round(100 * s["nrem_min"] / tst, 1)
     s["rem_pct_tst"] = round(100 * s["rem_min"] / tst, 1)
+    if "deep" in epochs and epochs["deep"].notna().any():
+        deep = epochs["deep"].fillna(0).to_numpy() > 0
+        s["deep_min"] = round(deep.sum() * ep_min, 1)
+        s["deep_pct_tst"] = round(100 * s["deep_min"] / tst, 1)
+        s["deep_periods"] = sum(1 for _, _, lb in heuristic._runs(deep) if lb)
     rem_idx = np.where(st == heuristic.REM)[0]
     s["rem_latency_min"] = round((rem_idx[0] - first) * ep_min, 1) if len(rem_idx) else None
     s["rem_periods"] = sum(1 for _, _, lb in heuristic._runs(period) if lb == heuristic.REM)
