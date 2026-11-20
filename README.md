@@ -37,11 +37,34 @@ On a night's page, log the times you remember being awake (for example *01:30 to
 
 ## Run it
 
+Prebuilt images are published to the GitHub container registry for Intel/AMD and ARM, so a NAS or home server does not have to build anything. You only need [`docker-compose.yml`](docker-compose.yml):
+
 ```bash
-git clone https://github.com/vrouleau/cpap-sleep-stager
-cd cpap-sleep-stager
-docker compose up -d --build
-# → http://localhost:8000
+mkdir sleep-stager && cd sleep-stager
+curl -O https://raw.githubusercontent.com/vrouleau/cpap-sleep-stager/main/docker-compose.yml
+docker compose pull && docker compose up -d
+# → http://<nas-address>:8000
+```
+
+Update the same way (`docker compose pull && docker compose up -d`). Your data stays in `./data`.
+
+| Image tag | What it is |
+|---|---|
+| `latest` | the newest release (recommended) |
+| `0.2.0`, `0.2` | a fixed release, to stay on or roll back to |
+| `edge` | the current `main` branch |
+| `…-sleepecg` | any of the above with the optional sleepecg engine (Intel/AMD only, ~600 MB larger) |
+
+**TerraMaster (TOS):** install *Docker Manager* (or *Docker Engine*) from the App Center, put `docker-compose.yml` in a shared folder (e.g. `/Volume1/docker/sleep-stager`), then run the two commands above there over SSH, or create a project from that file in Docker Manager's *Compose* section. Set `TZ` in the file to your time zone.
+
+To build from source instead: clone the repo and run `docker compose up -d --build`.
+
+### Releases
+
+Every push to `main` runs the tests and publishes `edge`. Tagging a version publishes `latest` and the version tags once the tests pass, and creates a GitHub Release with notes generated from the commits:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 Data lives in `./data` (`sleep.db` plus the original uploaded files, kept so a night can be re-analysed after an algorithm change or a clock-offset fix). SQLite is the default. Set `DATABASE_URL` to use Postgres (add `psycopg[binary]` to `requirements.txt`).

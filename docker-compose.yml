@@ -1,10 +1,15 @@
 services:
   sleep-stager:
+    # Prebuilt image from GitHub (Intel and ARM). Update with:
+    #   docker compose pull && docker compose up -d
+    # Tags: latest (newest release), 0.2.0 (a fixed release), edge (current main),
+    #       and the same with -sleepecg for the optional ML engine (Intel only, ~600 MB larger).
+    image: ghcr.io/vrouleau/cpap-sleep-stager:latest
+    # To build from this checkout instead: docker compose up -d --build
     build:
       context: .
       args:
         WITH_SLEEPECG: "false"   # "true" adds the sleepecg ML engine (~600 MB larger image)
-    image: cpap-sleep-stager:latest
     container_name: sleep-stager
     restart: unless-stopped
     ports:

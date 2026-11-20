@@ -4,3 +4,5 @@ demo
 tests
 **/__pycache__
 .pytest_cache
+.venv
+.github
