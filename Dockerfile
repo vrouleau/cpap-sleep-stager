@@ -15,6 +15,11 @@ RUN pip install -r requirements.txt \
 COPY app ./app
 COPY scripts ./scripts
 
+# shown at the bottom of the sidebar and in /api/health; set by the release workflow
+ARG APP_VERSION=dev
+ARG APP_COMMIT=
+ENV APP_VERSION=$APP_VERSION APP_COMMIT=$APP_COMMIT
+
 RUN mkdir -p /data
 VOLUME /data
 EXPOSE 8000

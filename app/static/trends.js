@@ -174,7 +174,9 @@
   /* Shared frame: y axis, hairline grid, x labels, and one hover column per bucket. */
   function frame(host, bks, yLo, yHi, yFmt, opts = {}) {
     host.replaceChildren();
-    const W = Math.max(host.clientWidth, 280), H = opts.h || 190, L = opts.left || 40, R = opts.right || 8, T = 10, B = 24;
+    // report charts are drawn at a fixed paper width (then scaled by CSS) so the PDF
+    // looks the same whatever the screen size; dashboards use the live width
+    const W = +host.dataset.paperW || Math.max(host.clientWidth, 280), H = opts.h || 190, L = opts.left || 40, R = opts.right || 8, T = 10, B = 24;
     const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, class: 'tchart', role: 'img' }, host);
     const pw = W - L - R, ph = H - T - B, n = bks.length, slot = pw / n;
     const x = i => L + slot * i + slot / 2;
@@ -413,6 +415,152 @@
     return { tiles, cards, cols };
   }
 
+  // ------------------------------------------------------------------ report (PDF)
+  /* A printable report for a clinician: who/when, three summary blocks, four charts,
+     a nightly (or monthly) table, free-text notes and the method. "Download PDF" opens
+     the print dialog; the page's print styles lay it out on paper. */
+  const store = {
+    get: k => { try { return localStorage.getItem('report.' + k) || ''; } catch { return ''; } },
+    set: (k, v) => { try { localStorage.setItem('report.' + k, v); } catch { /* private mode */ } },
+  };
+  function kv(title, rows, note) {
+    const s = document.createElement('section'); s.className = 'rp-block';
+    const h = document.createElement('h3'); h.textContent = title; s.appendChild(h);
+    const dl = document.createElement('dl');
+    for (const [k, v] of rows) {
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      dl.append(dt, dd);
+    }
+    s.appendChild(dl);
+    if (note) { const p = document.createElement('p'); p.className = 'rp-note'; p.textContent = note; s.appendChild(p); }
+    return s;
+  }
+  const clockOf = m => { if (m === null) return '–'; const t = (Math.round(m) + 12 * 60) % (24 * 60); return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; };
+  const median = xs => { const v = xs.filter(x => x !== null).sort((p, q) => p - q); return v.length ? v[Math.floor(v.length / 2)] : null; };
+
+  function renderReport(a, b, nights, bk) {
+    const cp = nights.filter(n => n.cpap), ring = nights.filter(n => n.ring);
+    const days = Math.round((parse(b) - parse(a)) / 864e5) + 1;
+    const pct = (n, d) => (d ? `${Math.round(100 * n / d)}%` : '–');
+    const comp = cp.filter(n => (FIELDS.usage(n) || 0) >= 4).length;
+    const r2 = v => v.toFixed(2);
+
+    document.getElementById('rp-period').textContent = `${long(a)} – ${long(b)}`;
+    document.getElementById('rp-generated').textContent = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+    const sources = [cp.length && `ResMed CPAP (${cp.length} night${cp.length === 1 ? '' : 's'})`,
+      ring.length && `Wellue O2Ring oximeter (${ring.length} night${ring.length === 1 ? '' : 's'})`].filter(Boolean);
+    document.getElementById('rp-sources').textContent = sources.join(' · ') || 'No recordings in this period';
+
+    // lowest SpO2 of the period and the night it happened
+    const low = ring.reduce((m, n) => (FIELDS.spo2min(n) !== null && (m === null || FIELDS.spo2min(n) < FIELDS.spo2min(m)) ? n : m), null);
+    const blocks = [];
+    if (cp.length) blocks.push(kv('CPAP therapy', [
+      ['Nights used', `${cp.length} of ${days}`],
+      ['Average use', fmtOr(avgOf(cp, 'usage'), hours)],
+      ['Nights ≥ 4 h', `${comp} of ${cp.length} (${pct(comp, cp.length)})`],
+      ['AHI (events / h asleep)', fmtOr(avgOf(cp, 'ahi'), r2)],
+      ['  Obstructive apnea', fmtOr(avgOf(cp, 'oa'), r2)],
+      ['  Central apnea', fmtOr(avgOf(cp, 'ca'), r2)],
+      ['  Hypopnea', fmtOr(avgOf(cp, 'h'), r2)],
+      ['  Unclassified apnea', fmtOr(avgOf(cp, 'ua'), r2)],
+      ['RERAs (total)', `${cp.reduce((s, n) => s + (FIELDS.rera(n) || 0), 0)}`],
+      ['Mask off/on per night', fmtOr(avgOf(cp, 'breaks'), v => v.toFixed(1))],
+      ['Breathing rate asleep', fmtOr(avgOf(cp, 'rr'), v => `${v.toFixed(1)} /min`)],
+    ], 'Events as recorded by the CPAP, counted only while asleep. Averages are per night.'));
+    if (ring.length) blocks.push(kv('Oximetry', [
+      ['Nights recorded', `${ring.length} of ${days}`],
+      ['ODI 4% (drops / h)', fmtOr(avgOf(ring, 'odi4'), r2)],
+      ['Mean SpO₂', fmtOr(mean(ring.map(n => num(n.s.spo2_mean))), v => `${v.toFixed(1)}%`)],
+      ['Lowest SpO₂', low ? `${Math.round(FIELDS.spo2min(low))}% (${short(low.d)})` : '–'],
+      ['Time below 90% (T90)', fmtOr(mean(ring.map(n => num(n.s.t90_min))), v => `${v.toFixed(1)} min / night`)],
+      ['Pulse asleep', fmtOr(avgOf(ring, 'hr'), v => `${v.toFixed(1)} bpm`)],
+    ], 'Finger oximeter, 4-second samples.'));
+    if (nights.length) blocks.push(kv('Sleep (estimated)', [
+      ['Time asleep', fmtOr(avgOf(nights, 'tst'), hours)],
+      ['Time in bed', fmtOr(mean(nights.map(n => (num(n.s.tib_min) !== null ? n.s.tib_min / 60 : null))), hours)],
+      ['Sleep efficiency', fmtOr(avgOf(nights, 'eff'), F.pct.v)],
+      ['Awake after falling asleep', fmtOr(avgOf(nights, 'waso'), F.min.v)],
+      ['Awakenings (≥ 1 min)', fmtOr(mean(nights.map(n => num(n.s.awakenings))), v => v.toFixed(1))],
+      ['Typical sleep window', `${clockOf(median(nights.map(FIELDS.onset)))} – ${clockOf(median(nights.map(FIELDS.wake)))}`],
+      ['REM', fmtOr(avgOf(nights, 'rem_pct'), v => `${Math.round(v)}% of sleep`)],
+      ['Deep (est.)', fmtOr(avgOf(ring, 'deep_pct'), v => `${Math.round(v)}% of sleep`)],
+      ['Arousals', fmtOr(avgOf(ring, 'arousal_idx'), v => `${v.toFixed(1)} / h`)],
+    ], 'Estimated from breathing, pulse and movement, not EEG.'));
+    document.getElementById('rp-summary').replaceChildren(...blocks);
+
+    const charts = [
+      card('Sleep stages per night (estimated)', null, STAGES(), p => bars(p, bk.list, STAGES(), F.hours, { totalLabel: 'In bed' })),
+    ];
+    if (cp.length) {
+      charts.push(card('AHI by event type', null, EVENTS().map(e => ({ ...e, label: e.label.replace('Apnea (unclassified)', 'Unclassified') })),
+        p => bars(p, bk.list, EVENTS(), F.rate, { totalLabel: 'AHI', min: 0.5 })));
+      charts.push(card('CPAP use (hours, line at 4 h)', null, null,
+        p => bars(p, bk.list, [{ key: 'usage', label: 'mask on', color: css('--accent') }], F.hours, { ref: { value: 4, label: '4 h' } })));
+    }
+    if (ring.length) charts.push(card('Lowest SpO₂ per night', null, null,
+      p => line(p, bk.list, { key: 'spo2min', label: 'lowest SpO₂', color: css('--line2') }, F.spo2, { minSpan: 6 })));
+    charts.forEach((c, i) => { c.querySelector('.plot').dataset.paperW = i === 0 ? 720 : 350; });
+    document.getElementById('rp-charts').replaceChildren(...charts);
+    cards = charts;
+    charts.forEach(c => c._draw());
+
+    // nightly table up to ~3 months, monthly averages beyond
+    // [header, field, format]: a night's value, or a month's average of it
+    const cols = [['Use', 'usage', hours], ['AHI', 'ahi', r2], ['OA', 'oa', r2], ['CA', 'ca', r2], ['H', 'h', r2],
+      ['Asleep', 'tst', hours], ['Eff.', 'eff', F.pct.v], ['WASO', 'waso', v => `${Math.round(v)}`],
+      ['ODI4', 'odi4', r2], ['SpO₂ min', 'spo2min', F.spo2.v]];
+    const t = document.createElement('table'); t.className = 'rp-table';
+    const hr = t.createTHead().insertRow();
+    const monthly = nights.length > 92;
+    for (const h of [monthly ? 'Month' : 'Night', ...(monthly ? ['Nights'] : []), ...cols.map(c => c[0])]) {
+      const th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
+    }
+    const tb = t.createTBody();
+    if (!monthly) {
+      for (const n of nights) {
+        const r = tb.insertRow(); r.insertCell().textContent = short(n.d);
+        for (const [, f, fmt] of cols) r.insertCell().textContent = fmtOr(FIELDS[f](n), fmt);
+      }
+    } else {
+      const groups = new Map();
+      for (const n of nights) { const k = n.d.slice(0, 7); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(n); }
+      for (const [k, ns] of groups) {
+        const r = tb.insertRow();
+        r.insertCell().textContent = `${MON[+k.slice(5) - 1]} ${k.slice(0, 4)}`;
+        r.insertCell().textContent = `${ns.length}`;
+        for (const [, f, fmt] of cols) r.insertCell().textContent = fmtOr(avgOf(ns, f), fmt);
+      }
+    }
+    document.getElementById('rp-table-title').textContent = monthly ? 'Monthly averages' : 'Night by night';
+    document.getElementById('rp-table').replaceChildren(nights.length ? t : Object.assign(document.createElement('p'), { textContent: 'No nights in this period.' }));
+    document.getElementById('empty').hidden = nights.length > 0;
+  }
+
+  if (PAGE === 'report') {
+    const name = document.getElementById('rp-name-in'), notes = document.getElementById('rp-notes-in');
+    const sync = () => {
+      document.getElementById('rp-name').textContent = name.value.trim();
+      const out = document.getElementById('rp-notes');
+      out.textContent = notes.value.trim();
+      out.closest('section').hidden = !notes.value.trim();
+    };
+    name.value = store.get('name'); notes.value = store.get('notes');
+    name.addEventListener('input', () => { store.set('name', name.value); sync(); });
+    notes.addEventListener('input', () => { store.set('notes', notes.value); sync(); });
+    sync();
+    // print in light colours whatever the screen theme, and name the PDF after the period
+    let title = document.title;
+    addEventListener('beforeprint', () => {
+      document.documentElement.dataset.print = '1';
+      const [a, b] = span();
+      title = document.title; document.title = `Sleep report ${a} to ${b}`;
+      render();
+    });
+    addEventListener('afterprint', () => { delete document.documentElement.dataset.print; document.title = title; render(); });
+    document.getElementById('rp-print').addEventListener('click', () => window.print());
+  }
+
   // ------------------------------------------------------------------ render
   let cards = [];
   function render() {
@@ -421,6 +569,7 @@
     const bk = buckets(nights, a, b);
     document.getElementById('range-label').textContent =
       `${long(a)} – ${long(b)}${bk.weekly ? ' · weekly averages' : ''}`;
+    if (PAGE === 'report') { renderReport(a, b, nights, bk); return; }
     const page = (PAGE === 'cpap' ? cpapPage : sleepPage)(nights, bk.list);
     document.getElementById('tiles').replaceChildren(...page.tiles);
     const host = document.getElementById('charts');

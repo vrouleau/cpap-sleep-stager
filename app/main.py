@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import logging
+import os
 import tempfile
 from contextlib import asynccontextmanager
 from datetime import date, datetime, time, timedelta
@@ -45,6 +46,38 @@ def _static(name: str) -> str:
 
 
 templates.env.globals["static"] = _static
+
+REPO_URL = "https://github.com/vrouleau/cpap-sleep-stager"
+
+
+def _app_version() -> dict:
+    """What is running: a release ("0.2.0", "0.2.0-sleepecg" from the image build), the
+    main-branch build ("edge"), a git checkout (git describe), or "dev"."""
+    import re
+    import subprocess
+
+    raw = os.environ.get("APP_VERSION", "").strip()
+    commit = os.environ.get("APP_COMMIT", "").strip()
+    if not raw or raw == "dev":
+        try:  # running from a source checkout
+            raw = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"], cwd=BASE.parent,
+                                 capture_output=True, text=True, timeout=3).stdout.strip() or "dev"
+        except (OSError, subprocess.SubprocessError):
+            raw = "dev"
+    variant = " · sleepecg" if raw.endswith("-sleepecg") else ""
+    base = raw.removesuffix("-sleepecg")
+    if re.fullmatch(r"v?\d+\.\d+\.\d+", base):
+        tag = "v" + base.lstrip("v")
+        return {"version": tag, "label": tag + variant, "url": f"{REPO_URL}/releases/tag/{tag}"}
+    if base == "edge":
+        short = commit[:7]
+        return {"version": "edge", "label": f"edge{' · ' + short if short else ''}{variant}",
+                "url": f"{REPO_URL}/commit/{commit}" if commit else REPO_URL}
+    return {"version": base, "label": base + variant, "url": REPO_URL}
+
+
+APP_VERSION = _app_version()
+templates.env.globals["app_version"] = APP_VERSION
 
 
 def _fmt_min(m):
@@ -227,6 +260,15 @@ def cpap_trends(request: Request):
     return _trends(request, "cpap", "CPAP trends")
 
 
+@app.get("/reports", response_class=HTMLResponse)
+def reports(request: Request):
+    rows = _trend_rows()
+    if not rows:
+        return RedirectResponse("/import", status_code=303)
+    data = json.dumps(_jsonsafe(rows)).replace("</", "<\\/")
+    return templates.TemplateResponse(request, "report.html", {"active": "reports", "nights_json": data})
+
+
 NIGHTS_PER_PAGE = 30
 
 
@@ -338,7 +380,7 @@ def delete_form(night_id: int):
 # ---------------------------------------------------------------- JSON API
 @app.get("/api/health")
 def health():
-    return {"ok": True, "sleepecg": sleepecg_engine.available()}
+    return {"ok": True, "sleepecg": sleepecg_engine.available(), "version": APP_VERSION["label"]}
 
 
 @app.get("/api/nights")
