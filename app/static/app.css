@@ -132,6 +132,9 @@ svg .arousaltick { fill: var(--awake); opacity: .55; }
 .side li a.on { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
 .side svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .side-foot { margin-top: auto; font-size: .72rem; color: var(--muted); padding: 0 .5rem; }
+.side-foot p { margin: 0 0 .5rem; }
+.side-foot .version { color: var(--muted); font-variant-numeric: tabular-nums; }
+.side-foot .version:hover { color: var(--accent); }
 @media (max-width: 760px) {
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
   .side { position: static; height: auto; flex-direction: row; align-items: center; gap: .5rem; padding: .5rem 1rem; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
@@ -202,3 +205,62 @@ svg.tchart { display: block; overflow: visible; max-width: 100%; }
 .pager .off { color: var(--muted); opacity: .6; }
 .pager .gap { color: var(--muted); min-width: auto; padding: .3rem .1rem; }
 .legend label.none { cursor: default; color: var(--muted); }
+
+/* ---------- report (Reports tab; printed to PDF) ---------- */
+.rp-opts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: .8rem; align-items: start; }
+.rp-opts label { display: flex; flex-direction: column; gap: .25rem; font-size: .82rem; color: var(--muted); }
+.rp-opts textarea { font: inherit; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); resize: vertical; }
+.rp-opts p { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 760px) { .rp-opts { grid-template-columns: minmax(0, 1fr); } }
+.paper { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; max-width: 800px; margin: 0 auto 2rem; padding: 2rem 2.2rem; }
+.paper h3 { font-size: .95rem; margin: 0 0 .5rem; }
+.rp-head { display: flex; justify-content: space-between; gap: 1.5rem; flex-wrap: wrap; border-bottom: 2px solid var(--ink); padding-bottom: .8rem; margin-bottom: 1.2rem; }
+.rp-title { font-size: 1.6rem; margin: 0; }
+.rp-name { margin: .2rem 0 0; font-size: 1.05rem; font-weight: 600; }
+.rp-name:empty { display: none; }
+.rp-meta { display: grid; grid-template-columns: auto auto; gap: .1rem .8rem; margin: 0; font-size: .85rem; }
+.rp-meta dt { color: var(--muted); } .rp-meta dd { margin: 0; }
+.rp-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.2rem; margin-bottom: 1.2rem; }
+@media (max-width: 760px) { .rp-summary { grid-template-columns: minmax(0, 1fr); } .paper { padding: 1.2rem; } }
+.rp-block dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .15rem .6rem; margin: 0; font-size: .82rem; }
+.rp-block dt { color: var(--muted); white-space: pre; } .rp-block dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rp-note { font-size: .72rem; color: var(--muted); margin: .4rem 0 0; }
+.rp-notes-block { border-left: 3px solid var(--accent); padding: .3rem .8rem; margin-bottom: 1.2rem; }
+.rp-notes-block p { margin: 0; white-space: pre-wrap; font-size: .9rem; }
+.rp-charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .8rem 1.2rem; margin-bottom: 1.2rem; }
+.rp-charts .card { border: 0; padding: 0; margin: 0; border-radius: 0; background: none; }
+.rp-charts .card:first-child { grid-column: 1 / -1; }
+.rp-charts h2 { font-size: .9rem; margin: 0 0 .2rem; }
+.rp-charts .legend { font-size: .75rem; }
+.paper svg.tchart { width: 100%; height: auto; }
+@media (max-width: 760px) { .rp-charts { grid-template-columns: minmax(0, 1fr); } }
+.rp-tablewrap { overflow-x: auto; }
+.rp-table { width: 100%; border-collapse: collapse; font-size: .72rem; font-variant-numeric: tabular-nums; }
+.rp-table th, .rp-table td { padding: .04rem .35rem; line-height: 1.22; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rp-table th:first-child, .rp-table td:first-child { text-align: left; }
+.rp-table th { color: var(--muted); font-weight: 600; }
+.rp-foot { text-align: left; padding: .6rem 0 0; margin-top: 1rem; padding-top: .7rem; border-top: 1px solid var(--line); font-size: .7rem; color: var(--muted); }
+.rp-foot p { margin: 0; }
+
+/* printing: only the paper, in the light palette, laid out for A4/Letter */
+:root[data-print] {
+  --bg: #fff; --card: #fff; --ink: #1d2330; --muted: #5b6272; --line: #d9dce3;
+  --deep: #2a78d6; --nrem: #1baf7a; --rem: #6250d6; --awake: #eb6834;
+  --ev-oa: #e34948; --ev-ca: #008300; --ev-h: #e87ba4; --ev-ua: #eda100;
+  --grid: #e1e0d9; --axis: #c3c2b7; --accent: #3f6fd8; --line2: #1f9d8a;
+}
+@page { margin: 14mm 12mm; }
+@media print {
+  .side, .noprint, .ttip, #again { display: none !important; }
+  html, body { background: #fff !important; }
+  .shell { display: block; }
+  main { max-width: none; padding: 0; }
+  .paper { border: 0; border-radius: 0; padding: 0; margin: 0; max-width: none; }
+  .rp-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rp-charts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .rp-block, .rp-charts .card, .rp-notes-block, .rp-foot, .rp-head { break-inside: avoid; }
+  .rp-table tr { break-inside: avoid; }
+  .rp-tablewrap { overflow: visible; }
+  .tchart .hit { display: none; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

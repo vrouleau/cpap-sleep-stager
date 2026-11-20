@@ -89,6 +89,8 @@ def test_api_roundtrip(demo_dir):
         assert d["has_resmed"] and d["has_o2ring"]
         assert {e["stage"] for e in d["epochs"]} == {"Awake", "NREM", "REM"}
         assert c.get("/").status_code == 200
+        rep = c.get("/reports")
+        assert rep.status_code == 200 and "Download PDF" in rep.text and 'id="nights-data"' in rep.text
         assert c.get(f"/nights/{nid}").status_code == 200
         csv = c.get(f"/api/nights/{nid}/epochs.csv").text
         assert csv.startswith("time,stage")
@@ -241,3 +243,22 @@ def test_nights_pager():
     assert _pager(1, 10) == [1, 2, 3, None, 10]
     assert _pager(6, 13) == [1, None, 4, 5, 6, 7, 8, None, 13]
     assert _pager(13, 13) == [1, None, 11, 12, 13]
+
+
+def test_app_version_label(monkeypatch):
+    from app import main
+
+    def label(v, c=""):
+        monkeypatch.setenv("APP_VERSION", v)
+        monkeypatch.setenv("APP_COMMIT", c)
+        return main._app_version()
+
+    r = label("0.2.0")
+    assert r["label"] == "v0.2.0" and r["url"].endswith("/releases/tag/v0.2.0")
+    assert label("0.2.0-sleepecg")["label"] == "v0.2.0 · sleepecg"
+    e = label("edge", "5a6260c1234567")
+    assert e["label"] == "edge · 5a6260c" and e["url"].endswith("/commit/5a6260c1234567")
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as c:
+        assert main.APP_VERSION["label"] in c.get("/import").text
+        assert c.get("/api/health").json()["version"] == main.APP_VERSION["label"]

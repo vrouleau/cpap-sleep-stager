@@ -64,7 +64,10 @@ jobs:
           context: .
           push: true
           platforms: ${{ matrix.platforms }}
-          build-args: WITH_SLEEPECG=${{ matrix.sleepecg }}
+          build-args: |
+            WITH_SLEEPECG=${{ matrix.sleepecg }}
+            APP_VERSION=${{ steps.meta.outputs.version }}
+            APP_COMMIT=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.variant }}

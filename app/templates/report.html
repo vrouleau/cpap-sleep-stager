@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Reports · Sleep Stager{% endblock %}
+{% block content %}
+<div id="trends" data-page="report">
+  <header class="pagehead noprint">
+    <div>
+      <h1>Reports</h1>
+      <p class="muted" id="range-label"></p>
+    </div>
+    <div class="filters" role="group" aria-label="Report period">
+      <label class="sr" for="range">Report period</label>
+      <select id="range"></select>
+      <span id="range-custom" class="custom" hidden>
+        <input type="date" id="range-from" aria-label="From"> – <input type="date" id="range-to" aria-label="To">
+      </span>
+      <button type="button" id="rp-print">Download PDF</button>
+    </div>
+  </header>
+  <section class="card noprint rp-opts">
+    <label>Name on the report <input type="text" id="rp-name-in" placeholder="optional" autocomplete="name"></label>
+    <label class="wide">Notes for the reader
+      <textarea id="rp-notes-in" rows="3" placeholder="e.g. Lying awake 3–5 am most nights; new mask since Nov 2."></textarea></label>
+    <p class="muted small">Download PDF opens the print dialog: choose <b>Save as PDF</b> as the printer, then attach the file to your email.
+      Name and notes stay in this browser only.</p>
+  </section>
+  <p id="empty" class="card muted noprint" hidden>No nights in this period. Pick a longer one above.</p>
+
+  <article class="paper" id="report">
+    <header class="rp-head">
+      <div>
+        <h2 class="rp-title">Sleep report</h2>
+        <p class="rp-name" id="rp-name"></p>
+      </div>
+      <dl class="rp-meta">
+        <dt>Period</dt><dd id="rp-period"></dd>
+        <dt>Data</dt><dd id="rp-sources"></dd>
+        <dt>Generated</dt><dd id="rp-generated"></dd>
+      </dl>
+    </header>
+    <div class="rp-summary" id="rp-summary"></div>
+    <section class="rp-notes-block" hidden><h3>Notes</h3><p id="rp-notes"></p></section>
+    <div class="rp-charts" id="rp-charts"></div>
+    <section class="rp-tablewrap"><h3 id="rp-table-title">Night by night</h3><div id="rp-table"></div></section>
+    <footer class="rp-foot">
+      <p><b>How this was measured.</b> CPAP usage, breathing rate and apnea/hypopnea events come from the ResMed machine's own recordings
+        (flow at 25 Hz and its event file); AHI counts only events while asleep. SpO₂, pulse and movement come from a Wellue O2Ring finger
+        oximeter. Sleep stages (awake, light NREM, deep, REM) and arousals are <b>estimated</b> from breathing, pulse and movement by
+        Sleep Stager, open-source software (github.com/vrouleau/cpap-sleep-stager). They are not EEG-based polysomnography, and this
+        is not a medical device.</p>
+    </footer>
+  </article>
+</div>
+<script type="application/json" id="nights-data">{{ nights_json|safe }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ static('trends.js') }}"></script>{% endblock %}

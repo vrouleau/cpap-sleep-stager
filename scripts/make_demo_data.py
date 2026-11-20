@@ -31,7 +31,8 @@ def hypnogram(rng, n_epochs: int) -> np.ndarray:
         if rng.random() < 0.5:
             st += ["W"] * int(rng.integers(2, 8))
         cycle += 1
-    st = st[: n_epochs - 20] + ["W"] * 20
+    st = st[: n_epochs - 20]
+    st += ["W"] * (n_epochs - len(st))  # wake up at the end; also pads a short last cycle
     return np.array(st[:n_epochs])
 
 
