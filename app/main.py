@@ -270,9 +270,10 @@ def api_nights():
 async def api_upload(files: list[UploadFile] = File(...), engine: str = Form("heuristic"),
                      offset: float = Form(0.0), dayfirst: bool = Form(False),
                      replace: bool = Form(True), age: str | None = Form(None),
-                     gender: str | None = Form(None), auto_sync: bool = Form(False)):
+                     gender: str | None = Form(None), auto_sync: bool = Form(False),
+                     notes: str | None = Form(None)):
     return await _ingest(files, _opts(engine, offset, dayfirst, age, gender, auto_sync),
-                         replace, None)
+                         replace, notes or None)
 
 
 @app.get("/api/nights/{night_id}")

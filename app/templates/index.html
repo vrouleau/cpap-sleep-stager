@@ -4,14 +4,17 @@
   <div class="card">
     <h2>Upload</h2>
     <form action="/upload" method="post" enctype="multipart/form-data" id="upform">
-      <label class="drop" id="drop">
-        <input type="file" name="files" multiple required
-               >
-        <strong>Drop files or a .zip here</strong>
-        <span>ResMed <code>*_BRP.edf</code> (+ <code>*_EVE.edf</code> for events) and/or the
-          O2Ring CSV export or raw ring files (O2 Insight Pro's <code>DATA</code> folder). A zip of the whole SD card <code>DATALOG</code> folder works: nights are split automatically.</span>
-        <em id="picked"></em>
-      </label>
+      <div class="drop" id="drop">
+        <strong>Drop folders, files or a .zip here</strong>
+        <span>The whole ResMed SD card (or its <code>DATALOG</code> folder) and/or the O2Ring data:
+          O2 Insight Pro's <code>DATA</code> folder (raw ring files) or CSV exports.
+          Only what the analysis uses is uploaded, and nights are split automatically.</span>
+        <div class="pickers">
+          <label class="btn ghost">Choose folder<input type="file" id="pick-folder" webkitdirectory directory multiple hidden></label>
+          <label class="btn ghost">Choose files<input type="file" id="pick-files" multiple hidden></label>
+        </div>
+      </div>
+      <div id="summary" aria-live="polite"></div>
       <details>
         <summary>Options</summary>
         <div class="opts">
@@ -32,8 +35,13 @@
           <label class="wide">Notes <input type="text" name="notes" placeholder="e.g. new mask, late coffee"></label>
         </div>
       </details>
-      <button type="submit" id="go">Analyse</button>
+      <div class="upactions">
+        <button type="submit" id="go" disabled>Upload &amp; analyse</button>
+        <button type="button" class="btn ghost" id="clear" hidden>Clear</button>
+      </div>
     </form>
+    <div id="progress" class="progress" hidden><div class="track"><div class="bar"></div></div><span class="label"></span></div>
+    <ul id="results" class="results"></ul>
   </div>
   <div class="card">
     <h2>Trend</h2>
@@ -78,12 +86,8 @@
 const TREND = {{ trend|tojson }};
 </script>
 <script src="/static/charts.js"></script>
+<script src="/static/upload.js"></script>
 <script>
-const inp = document.querySelector('#drop input'), picked = document.getElementById('picked');
-inp.addEventListener('change', () => picked.textContent = [...inp.files].map(f => f.name).join(', '));
-document.getElementById('upform').addEventListener('submit', () => {
-  const b = document.getElementById('go'); b.disabled = true; b.textContent = 'Analysing…';
-});
 if (TREND.length) renderTrend(document.getElementById('trend'), TREND);
 </script>
 {% endblock %}
