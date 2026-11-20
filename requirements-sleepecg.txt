@@ -1,0 +1,4 @@
+# Optional ML engine. keras runs on the jax backend (CPU) to keep the image small.
+sleepecg>=0.6.0
+keras>=3.15
+jax[cpu]>=0.4.30

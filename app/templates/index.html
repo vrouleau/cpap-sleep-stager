@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid2">
+  <div class="card">
+    <h2>Upload</h2>
+    <form action="/upload" method="post" enctype="multipart/form-data" id="upform">
+      <label class="drop" id="drop">
+        <input type="file" name="files" multiple required
+               accept=".edf,.EDF,.csv,.CSV,.txt,.zip">
+        <strong>Drop files or a .zip here</strong>
+        <span>ResMed <code>*_BRP.edf</code> (+ <code>*_EVE.edf</code> for events) and/or the
+          O2Ring CSV export. A zip of the whole SD card <code>DATALOG</code> folder works: nights are split automatically.</span>
+        <em id="picked"></em>
+      </label>
+      <details>
+        <summary>Options</summary>
+        <div class="opts">
+          <label>Engine
+            <select name="engine">
+              <option value="heuristic">Cardio-respiratory heuristic</option>
+              <option value="sleepecg" {% if not sleepecg %}disabled{% endif %}>
+                sleepecg + respiratory{% if not sleepecg %} (not installed){% endif %}</option>
+            </select></label>
+          <label>O2Ring clock offset (s)
+            <input type="number" name="offset" value="0" step="1"
+                   title="Seconds to add to O2Ring timestamps to line them up with the CPAP clock"></label>
+          <label>Age <input type="number" name="age" min="1" max="120" placeholder="for sleepecg"></label>
+          <label>Sex <select name="gender"><option value="">–</option><option>male</option><option>female</option></select></label>
+          <label class="chk"><input type="checkbox" name="dayfirst" value="true"> O2Ring dates are DD/MM</label>
+          <label class="chk"><input type="checkbox" name="replace" value="true"> Replace nights that already exist</label>
+          <label class="wide">Notes <input type="text" name="notes" placeholder="e.g. new mask, late coffee"></label>
+        </div>
+      </details>
+      <button type="submit" id="go">Analyse</button>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Trend</h2>
+    {% if trend %}
+      <div id="trend" class="trend"></div>
+      <div class="legend"><span class="sw awake"></span>Awake <span class="sw nrem"></span>NREM <span class="sw rem"></span>REM</div>
+    {% else %}
+      <p class="muted">No nights yet. Upload one to start building history.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% if nights %}
+<section class="card">
+  <h2>History</h2>
+  <div class="tablewrap">
+  <table class="hist">
+    <thead><tr><th>Night</th><th>Sources</th><th>In bed</th><th>Asleep</th><th>Eff.</th>
+      <th>NREM</th><th>REM</th><th>REM lat.</th><th>WASO</th><th>AHI</th><th>ODI4</th><th>SpO₂ min</th></tr></thead>
+    <tbody>
+    {% for n in nights %}{% set s = n.summary %}
+      <tr onclick="location.href='/nights/{{ n.id }}'">
+        <td><a href="/nights/{{ n.id }}">{{ n.night_date }}</a></td>
+        <td>{% if n.has_resmed %}<span class="tag">CPAP</span>{% endif %}{% if n.has_o2ring %}<span class="tag">O2Ring</span>{% endif %}</td>
+        <td>{{ s.tib_min|hm }}</td><td>{{ s.tst_min|hm }}</td>
+        <td>{{ s.sleep_efficiency or '–' }}%</td>
+        <td>{{ s.nrem_pct_tst or '–' }}%</td><td>{{ s.rem_pct_tst or '–' }}%</td>
+        <td>{{ s.rem_latency_min|hm }}</td><td>{{ s.waso_min|hm }}</td>
+        <td>{{ s.ahi_sleep if s.ahi_sleep is not none else '–' }}</td>
+        <td>{{ s.odi4 if s.odi4 is not none else '–' }}</td>
+        <td>{{ s.spo2_min if s.spo2_min is not none else '–' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const TREND = {{ trend|tojson }};
+</script>
+<script src="/static/charts.js"></script>
+<script>
+const inp = document.querySelector('#drop input'), picked = document.getElementById('picked');
+inp.addEventListener('change', () => picked.textContent = [...inp.files].map(f => f.name).join(', '));
+document.getElementById('upform').addEventListener('submit', () => {
+  const b = document.getElementById('go'); b.disabled = true; b.textContent = 'Analysing…';
+});
+if (TREND.length) renderTrend(document.getElementById('trend'), TREND);
+</script>
+{% endblock %}

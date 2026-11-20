@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Night {{ n.night_date }} · Sleep Stager{% endblock %}
+{% block content %}{% set s = n.summary %}
+<nav class="crumbs">
+  <a href="/">← History</a>
+  <span class="spacer"></span>
+  {% if prev_id %}<a href="/nights/{{ prev_id }}">‹ previous night</a>{% endif %}
+  {% if next_id %}<a href="/nights/{{ next_id }}">next night ›</a>{% endif %}
+</nav>
+
+<section class="card">
+  <div class="head">
+    <div>
+      <h1>Night of {{ n.night_date }}</h1>
+      <p class="muted">
+        {% if s.sleep_onset %}Asleep {{ s.sleep_onset[11:16] }} → awake {{ s.final_wake[11:16] }} ·{% endif %}
+        {% if n.has_resmed %}<span class="tag">CPAP flow</span>{% endif %}
+        {% if n.has_o2ring %}<span class="tag">O2Ring</span>{% endif %}
+        <span class="tag ghost">engine: {{ n.engine }}</span>
+        {% if n.notes %}· {{ n.notes }}{% endif %}
+      </p>
+    </div>
+    <div class="actions">
+      <a class="btn ghost" href="/api/nights/{{ n.id }}/epochs.csv">Epochs CSV</a>
+      <a class="btn ghost" href="/api/nights/{{ n.id }}">JSON</a>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><b>{{ s.tst_min|hm }}</b><span>asleep · {{ s.sleep_efficiency or '–' }}% eff.</span></div>
+    <div class="tile awake"><b>{{ s.awake_min|hm }}</b><span>awake · WASO {{ s.waso_min|hm }}</span></div>
+    <div class="tile nrem"><b>{{ s.nrem_min|hm }}</b><span>NREM · {{ s.nrem_pct_tst or 0 }}% of sleep</span></div>
+    <div class="tile rem"><b>{{ s.rem_min|hm }}</b><span>REM · {{ s.rem_pct_tst or 0 }}% · {{ s.rem_periods or 0 }} periods</span></div>
+    <div class="tile"><b>{{ s.rem_latency_min|hm }}</b><span>REM latency · onset {{ s.sol_min|hm }}</span></div>
+    {% if s.ahi_sleep is defined and s.ahi_sleep is not none %}<div class="tile"><b>{{ s.ahi_sleep }}</b><span>AHI (ResMed events / h sleep)</span></div>{% endif %}
+    {% if s.odi4 is defined and s.odi4 is not none %}<div class="tile"><b>{{ s.odi4 }}</b><span>ODI 4% · SpO₂ min {{ s.spo2_min }}%</span></div>{% endif %}
+    {% if s.hr_sleep_mean is defined %}<div class="tile"><b>{{ s.hr_sleep_mean }}</b><span>bpm asleep · NREM {{ s.hr_nrem_mean }} / REM {{ s.hr_rem_mean or '–' }}</span></div>{% endif %}
+    {% if s.resp_rate_sleep is defined %}<div class="tile"><b>{{ s.resp_rate_sleep }}</b><span>breaths/min asleep</span></div>{% endif %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>Timeline</h2>
+  <div id="chart" class="chart"></div>
+  <div class="legend"><span class="sw awake"></span>Awake <span class="sw nrem"></span>NREM <span class="sw rem"></span>REM
+    <span class="sw ev"></span>ResMed event <span class="sw desat"></span>Desat ≥4%</div>
+</section>
+
+<section class="grid2">
+  <div class="card">
+    <h2>Stage breakdown</h2>
+    <div class="tablewrap tall">
+    <table class="segs">
+      <thead><tr><th>Stage</th><th>From</th><th>To</th><th>Duration</th></tr></thead>
+      <tbody>
+      {% for g in segments %}
+        <tr class="{{ g.stage|lower }}"><td><span class="pill {{ g.stage|lower }}">{{ g.stage }}</span></td>
+          <td>{{ g.start.strftime('%H:%M:%S') }}</td><td>{{ g.end.strftime('%H:%M:%S') }}</td>
+          <td>{{ g.minutes|hm if g.minutes >= 1 else '30 s' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <div class="card">
+    <h2>ResMed events <span class="muted">({{ events|length }})</span></h2>
+    <div class="tablewrap tall">
+    {% if events %}
+    <table class="segs">
+      <thead><tr><th>Time</th><th>Event</th><th>Duration</th></tr></thead>
+      <tbody>{% for e in events %}<tr><td>{{ e.t.strftime('%H:%M:%S') }}</td><td>{{ e.kind }}</td><td>{{ e.duration_s|round|int }} s</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="muted">No EVE.edf events for this night.</p>{% endif %}
+    </div>
+    <h2 style="margin-top:1.2rem">Re-analyse</h2>
+    <form method="post" action="/nights/{{ n.id }}/reprocess" class="opts">
+      <label>Engine
+        <select name="engine">
+          <option value="heuristic" {% if n.engine == 'heuristic' %}selected{% endif %}>Heuristic</option>
+          <option value="sleepecg" {% if not sleepecg %}disabled{% endif %} {% if 'sleepecg' in n.engine %}selected{% endif %}>sleepecg + resp</option>
+        </select></label>
+      <label>O2Ring offset (s) <input type="number" name="offset" value="{{ n.o2ring_offset_s|int }}"></label>
+      <label class="chk"><input type="checkbox" name="dayfirst" value="true"> DD/MM dates</label>
+      <button type="submit">Re-run</button>
+    </form>
+    <p class="muted small">Files: {{ n.files|join(', ') }}</p>
+    <form method="post" action="/nights/{{ n.id }}/delete" onsubmit="return confirm('Delete this night and its files?')">
+      <button class="danger" type="submit">Delete night</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/static/charts.js"></script>
+<script>
+fetch('/api/nights/{{ n.id }}').then(r => r.json()).then(d => renderNight(document.getElementById('chart'), d));
+</script>
+{% endblock %}

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Sleep Stager{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="/static/favicon.svg">
+</head>
+<body>
+  <header class="top">
+    <a href="/" class="brand"><span class="dot"></span>Sleep Stager</a>
+    <span class="sub">ResMed BRP + O2Ring → Awake / NREM / REM</span>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer>Not a medical device. Cardio-respiratory staging is an estimate, not polysomnography.</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

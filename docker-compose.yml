@@ -1,0 +1,16 @@
+services:
+  sleep-stager:
+    build:
+      context: .
+      args:
+        WITH_SLEEPECG: "false"   # "true" adds the sleepecg ML engine (~600 MB larger image)
+    image: cpap-sleep-stager:latest
+    container_name: sleep-stager
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      TZ: America/Toronto
+      # DATABASE_URL: postgresql+psycopg://sleep:sleep@db/sleep   # optional; SQLite by default
+    volumes:
+      - ./data:/data   # sleep.db + original uploads (kept so nights can be re-analysed)
