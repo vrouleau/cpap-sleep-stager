@@ -64,9 +64,19 @@ svg .axis.end { text-anchor: end; } svg .axis.mid { text-anchor: middle; }
 svg .pbg { fill: var(--bg); }
 svg .grid { stroke: var(--line); stroke-width: 1; }
 svg .cross { stroke: var(--ink); stroke-width: 1; opacity: .5; }
-svg .evtick { stroke: #c0392b; stroke-width: 1.5; } svg .desattick { stroke: var(--line2); stroke-width: 1.5; }
+svg .desattick { stroke: var(--line2); stroke-width: 1.5; }
+svg .evlayer.hidden { display: none; }
+svg .ev { --ec: #8a8f9c; } svg .ev.oa { --ec: #c0392b; } svg .ev.ca { --ec: #2e9e5b; }
+svg .ev.h { --ec: #d89a1d; } svg .ev.ua { --ec: #7f5539; }
+svg .evline { stroke: var(--ec); stroke-width: 1.2; opacity: .55; }
+svg .evband { fill: var(--ec); opacity: .12; }
+svg .ev:hover .evline { opacity: 1; stroke-width: 2; }
 .tip { position: absolute; display: none; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .4rem .6rem; font-size: .8rem; pointer-events: none; box-shadow: 0 4px 16px #0002; min-width: 170px; }
 .legend { font-size: .8rem; color: var(--muted); margin-top: .5rem; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
 .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; margin-left: .6rem; }
 .sw.awake { background: var(--awake); } .sw.nrem { background: var(--nrem); } .sw.rem { background: var(--rem); }
-.sw.ev { background: #c0392b; width: 3px; } .sw.desat { background: var(--line2); width: 3px; }
+.sw.desat { background: var(--line2); width: 3px; }
+.sw.oa { background: #c0392b; width: 3px; } .sw.ca { background: #2e9e5b; width: 3px; }
+.sw.h { background: #d89a1d; width: 3px; } .sw.ua { background: #7f5539; width: 3px; } .sw.other { background: #8a8f9c; width: 3px; }
+.legend label { display: inline-flex; align-items: center; gap: .3rem; margin-left: auto; cursor: pointer; }
+.legend .lg { display: inline-flex; align-items: center; gap: .4rem; }

@@ -43,7 +43,13 @@
   <h2>Timeline</h2>
   <div id="chart" class="chart"></div>
   <div class="legend"><span class="sw awake"></span>Awake <span class="sw nrem"></span>NREM <span class="sw rem"></span>REM
-    <span class="sw ev"></span>ResMed event <span class="sw desat"></span>Desat ≥4%</div>
+    <span class="lg" data-ev="oa"><span class="sw oa"></span>Obstructive</span>
+    <span class="lg" data-ev="ca"><span class="sw ca"></span>Central</span>
+    <span class="lg" data-ev="h"><span class="sw h"></span>Hypopnea</span>
+    <span class="lg" data-ev="ua"><span class="sw ua"></span>Apnea (unclassified)</span>
+    <span class="lg" data-ev="other"><span class="sw other"></span>RERA/other</span>
+    <span class="sw desat"></span>Desat ≥4%
+    <label><input type="checkbox" id="toggle-events" checked> Show ResMed events</label></div>
 </section>
 
 <section class="grid2">

@@ -50,10 +50,8 @@ function renderNight(host, d) {
             height: rh - 4, fill: COLORS[s], rx: 2 }, svg);
           i = j;
         }
-        for (const e of events) {
-          el('line', { x1: x(e.t), x2: x(e.t), y1: y0 + p.h - (e.source === 'resmed' ? 10 : 5),
-            y2: y0 + p.h, class: e.source === 'resmed' ? 'evtick' : 'desattick' }, svg);
-        }
+        for (const e of events) if (e.source !== 'resmed')
+          el('line', { x1: x(e.t), x2: x(e.t), y1: y0 + p.h - 6, y2: y0 + p.h, class: 'desattick' }, svg);
       } else {
         const vals = ep.map(e => e[p.key]).filter(v => v != null);
         let lo = p.min ?? Math.min(...vals), hi = p.max ?? Math.max(...vals);
@@ -86,6 +84,16 @@ function renderNight(host, d) {
       el('line', { x1: x(t), x2: x(t), y1: 0, y2: y0 - gap, class: 'grid' }, svg);
       el('text', { x: x(t), y: y0 + 8, class: 'axis mid' }, svg).textContent = hhmm(new Date(t));
     }
+    // ResMed events: full-height lines across every panel, coloured by type
+    const evLayer = el('g', { class: 'evlayer' + (showEvents ? '' : ' hidden') }, svg);
+    for (const e of events) {
+      if (e.source !== 'resmed') continue;
+      const xa = x(e.t.getTime()), xb = x(e.t.getTime() + e.duration_s * 1000);
+      const g = el('g', { class: 'ev ' + evClass(e.kind) }, evLayer);
+      if (xb - xa >= 2) el('rect', { x: xa, y: 0, width: xb - xa, height: y0 - gap, class: 'evband' }, g);
+      el('line', { x1: xa, x2: xa, y1: 0, y2: y0 - gap, class: 'evline' }, g);
+      el('title', {}, g).textContent = `${e.t.toTimeString().slice(0, 8)} ${e.kind} (${Math.round(e.duration_s)} s)`;
+    }
     // crosshair + readout
     const cross = el('line', { y1: 0, y2: y0 - gap, class: 'cross', visibility: 'hidden' }, svg);
     const tip = document.createElement('div'); tip.className = 'tip'; host.appendChild(tip);
@@ -106,8 +114,28 @@ function renderNight(host, d) {
     });
     svg.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); tip.style.display = 'none'; });
   }
+  const kinds = new Set(events.filter(e => e.source === 'resmed').map(e => evClass(e.kind)));
+  document.querySelectorAll('.legend .lg[data-ev]').forEach(n => { if (!kinds.has(n.dataset.ev)) n.style.display = 'none'; });
+  let showEvents = true;
+  const toggle = document.getElementById('toggle-events');
+  if (toggle) {
+    if (!events.some(e => e.source === 'resmed')) toggle.closest('label').style.display = 'none';
+    toggle.addEventListener('change', () => {
+      showEvents = toggle.checked;
+      host.querySelector('.evlayer')?.classList.toggle('hidden', !showEvents);
+    });
+  }
   draw();
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(draw, 150); });
+}
+
+function evClass(kind) {
+  const k = kind.toLowerCase();
+  if (k.includes('obstructive')) return 'oa';
+  if (k.includes('central')) return 'ca';
+  if (k.includes('hypopnea')) return 'h';
+  if (k.includes('apnea')) return 'ua';
+  return 'other';
 }
 
 function renderTrend(host, rows) {
