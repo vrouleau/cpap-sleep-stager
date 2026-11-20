@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Nights · Sleep Stager{% endblock %}
+{% block content %}
+{% macro pager_nav() %}{% if pages > 1 %}
+<nav class="pager" aria-label="Pages">
+  {% if page > 1 %}<a href="?page={{ page - 1 }}" rel="prev">‹ Newer</a>{% else %}<span class="off">‹ Newer</span>{% endif %}
+  {% for p in pager %}{% if p is none %}<span class="gap">…</span>{% elif p == page %}<span class="cur" aria-current="page">{{ p }}</span>{% else %}<a href="?page={{ p }}">{{ p }}</a>{% endif %}{% endfor %}
+  {% if page < pages %}<a href="?page={{ page + 1 }}" rel="next">Older ›</a>{% else %}<span class="off">Older ›</span>{% endif %}
+</nav>{% endif %}{% endmacro %}
+<header class="pagehead"><div><h1>Nights</h1>
+  <p class="muted">{% if total %}{{ first }}–{{ last }} of {{ total }} nights, newest first. Open one for its timeline.{% endif %}</p></div>
+  {{ pager_nav() }}</header>
+{% if nights %}
+<section class="card">
+  <div class="tablewrap">
+  <table class="hist">
+    <thead><tr><th>Night</th><th>Sources</th><th>In bed</th><th>Asleep</th><th>Eff.</th>
+      <th>NREM</th><th>Deep</th><th>REM</th><th>REM lat.</th><th>WASO</th><th>AHI</th><th>Usage</th><th>ODI4</th><th>SpO₂ min</th></tr></thead>
+    <tbody>
+    {% for n in nights %}{% set s = n.summary %}
+      <tr onclick="location.href='/nights/{{ n.id }}'">
+        <td><a href="/nights/{{ n.id }}">{{ n.night_date }}</a></td>
+        <td>{% if n.has_resmed %}<span class="tag">CPAP</span>{% endif %}{% if n.has_o2ring %}<span class="tag">O2Ring</span>{% endif %}</td>
+        <td>{{ s.tib_min|hm }}</td><td>{{ s.tst_min|hm }}</td>
+        <td>{{ s.sleep_efficiency or '–' }}%</td>
+        <td>{{ s.nrem_pct_tst or '–' }}%</td><td>{{ (s.deep_pct_tst ~ '%') if s.deep_pct_tst is defined else '–' }}</td><td>{{ s.rem_pct_tst or '–' }}%</td>
+        <td>{{ s.rem_latency_min|hm }}</td><td>{{ s.waso_min|hm }}</td>
+        <td>{{ s.ahi_sleep if s.ahi_sleep is not none else '–' }}</td>
+        <td>{{ s.usage_min|hm if s.usage_min is defined else '–' }}</td>
+        <td>{{ s.odi4 if s.odi4 is not none else '–' }}</td>
+        <td>{{ s.spo2_min if s.spo2_min is not none else '–' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pager_nav() }}
+</section>
+{% else %}
+<section class="card"><p>No nights yet. <a href="/import">Import data</a> to get started.</p></section>
+{% endif %}
+{% endblock %}

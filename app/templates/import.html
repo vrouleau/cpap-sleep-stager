@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Data import · Sleep Stager{% endblock %}
+{% block content %}
+<header class="pagehead"><div><h1>Data import</h1>
+  <p class="muted">ResMed SD card and/or O2Ring data. Nights are split automatically.</p></div></header>
+{% if imported is not none %}<p class="card notice">Imported {{ imported }} night{{ 's' if imported != 1 }}.</p>{% endif %}
+<section class="grid2 import">
+  <div class="card">
+    <h2>Upload</h2>
+    <p class="muted small">Re-inserting the same card only uploads the nights you don't have yet.</p>
+    <form action="/upload" method="post" enctype="multipart/form-data" id="upform">
+      <div class="drop" id="drop">
+        <strong>Drop folders, files or a .zip here</strong>
+        <span>The whole ResMed SD card (or its <code>DATALOG</code> folder) and/or the O2Ring data:
+          O2 Insight Pro's <code>DATA</code> folder (raw ring files) or CSV exports.
+          Only what the analysis uses is uploaded, and nights are split automatically.</span>
+        <div class="pickers">
+          <label class="btn ghost">Choose folder<input type="file" id="pick-folder" webkitdirectory directory multiple hidden></label>
+          <label class="btn ghost">Choose files<input type="file" id="pick-files" multiple hidden></label>
+        </div>
+      </div>
+      <div id="summary" aria-live="polite"></div>
+      <details>
+        <summary>Options</summary>
+        <div class="opts">
+          <label>Engine
+            <select name="engine">
+              <option value="heuristic">Cardio-respiratory heuristic</option>
+              <option value="sleepecg" {% if not sleepecg %}disabled{% endif %}>
+                sleepecg + respiratory{% if not sleepecg %} (not installed){% endif %}</option>
+            </select></label>
+          <label>CPAP clock correction (s)
+            <input type="number" name="offset" value="0" step="1"
+                   title="Seconds added to ResMed timestamps. -3600 = machine still on summer time"></label>
+          <label>Age <input type="number" name="age" min="1" max="120" placeholder="for sleepecg"></label>
+          <label>Sex <select name="gender"><option value="">–</option><option>male</option><option>female</option></select></label>
+          <label class="chk"><input type="checkbox" name="dayfirst" value="true"> O2Ring dates are DD/MM</label>
+          <label class="chk"><input type="checkbox" name="auto_sync" value="true" checked> Auto-correct CPAP clock (needs O2Ring; CPAP-only nights reuse the last correction)</label>
+          <label class="chk"><input type="checkbox" name="replace" value="true"> Replace nights that already exist</label>
+          <label class="wide">Notes <input type="text" name="notes" placeholder="e.g. new mask, late coffee"></label>
+        </div>
+      </details>
+      <div class="upactions">
+        <button type="submit" id="go" disabled>Upload &amp; analyse</button>
+        <button type="button" class="btn ghost" id="clear" hidden>Clear</button>
+      </div>
+    </form>
+    <div id="progress" class="progress" hidden><div class="track"><div class="bar"></div></div><span class="label"></span></div>
+    <ul id="results" class="results"></ul>
+  </div>
+  <div class="card">
+    <h2>Recent imports</h2>
+    {% if recent %}
+    <div class="tablewrap tall">
+    <table class="hist">
+      <thead><tr><th>Night</th><th>Sources</th><th>Files</th><th>Imported</th></tr></thead>
+      <tbody>{% for n in recent %}
+        <tr onclick="location.href='/nights/{{ n.id }}'"><td><a href="/nights/{{ n.id }}">{{ n.night_date }}</a></td>
+          <td>{% if n.has_resmed %}<span class="tag">CPAP</span>{% endif %}{% if n.has_o2ring %}<span class="tag">O2Ring</span>{% endif %}</td>
+          <td>{{ n.files|length }}</td><td>{{ n.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+    </div>
+    {% else %}<p class="muted">Nothing imported yet.</p>{% endif %}
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ static('upload.js') }}"></script>{% endblock %}

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Night {{ n.night_date }} · Sleep Stager{% endblock %}
+{% block content %}{% set s = n.summary %}
+<nav class="crumbs">
+  <a href="/nights{{ '?page=%d' % list_page if list_page > 1 }}">← Nights</a>
+  <span class="spacer"></span>
+  {% if prev_id %}<a href="/nights/{{ prev_id }}">‹ previous night</a>{% endif %}
+  {% if next_id %}<a href="/nights/{{ next_id }}">next night ›</a>{% endif %}
+</nav>
+
+<section class="card">
+  <div class="head">
+    <div>
+      <h1>Night of {{ n.night_date }}</h1>
+      <p class="muted">
+        {% if s.sleep_onset %}Asleep {{ s.sleep_onset[11:16] }} → awake {{ s.final_wake[11:16] }} ·{% endif %}
+        {% if n.has_resmed %}<span class="tag">CPAP flow</span>{% endif %}
+        {% if n.has_o2ring %}<span class="tag">O2Ring</span>{% endif %}
+        <span class="tag ghost">engine: {{ n.engine }}</span>
+        {% if n.notes %}· {{ n.notes }}{% endif %}
+      </p>
+      {% if s.trimmed_sessions %}
+      <p class="muted small">Ignored {{ s.trimmed_sessions|length }} short CPAP session{{ 's' if s.trimmed_sessions|length > 1 }}
+        hours away from the night (machine or mask tests):
+        {% for x in s.trimmed_sessions %}{{ x.start[11:16] }} ({{ x.minutes|hm if x.minutes >= 1 else '<1 min' }}){{ ', ' if not loop.last }}{% endfor %}.</p>
+      {% endif %}
+    </div>
+    <div class="actions">
+      <a class="btn ghost" href="/api/nights/{{ n.id }}/epochs.csv">Epochs CSV</a>
+      <a class="btn ghost" href="/api/nights/{{ n.id }}">JSON</a>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><b>{{ s.tst_min|hm }}</b><span>asleep · {{ s.sleep_efficiency or '–' }}% eff.</span></div>
+    <div class="tile awake"><b>{{ s.awake_min|hm }}</b><span>awake · WASO {{ s.waso_min|hm }}</span></div>
+    <div class="tile nrem"><b>{{ s.nrem_min|hm }}</b><span>NREM · {{ s.nrem_pct_tst or 0 }}% of sleep</span></div>
+    <div class="tile rem"><b>{{ s.rem_min|hm }}</b><span>REM · {{ s.rem_pct_tst or 0 }}% · {{ s.rem_periods or 0 }} periods</span></div>
+    {% if s.deep_min is defined %}<div class="tile deep"><b>{{ s.deep_min|hm }}</b><span>deep (est.) · {{ s.deep_pct_tst }}% of sleep · {{ s.deep_periods }} period{{ 's' if s.deep_periods != 1 }}</span></div>
+    {% elif n.has_resmed %}<div class="tile deep muted-tile"><b>–</b><span>deep sleep needs the O2Ring's pulse</span></div>{% endif %}
+    <div class="tile"><b>{{ s.rem_latency_min|hm }}</b><span>REM latency · onset {{ s.sol_min|hm }}</span></div>
+    {% if s.ahi_sleep is defined and s.ahi_sleep is not none %}<div class="tile"><b>{{ s.ahi_sleep }}</b><span>AHI (ResMed events / h sleep)</span></div>{% endif %}
+    {% if s.odi4 is defined and s.odi4 is not none %}<div class="tile"><b>{{ s.odi4 }}</b><span>ODI 4% · SpO₂ min {{ s.spo2_min }}%</span></div>{% endif %}
+    {% if s.hr_sleep_mean is defined %}<div class="tile"><b>{{ s.hr_sleep_mean }}</b><span>bpm asleep · NREM {{ s.hr_nrem_mean }} / REM {{ s.hr_rem_mean or '–' }}</span></div>{% endif %}
+    {% if s.resp_rate_sleep is defined %}<div class="tile"><b>{{ s.resp_rate_sleep }}</b><span>breaths/min asleep</span></div>{% endif %}
+  </div>
+</section>
+
+{% set sy = s.sync %}
+{% if sy and (sy.suggested_offset_s is defined or sy.inherited_from is defined) %}
+<section class="card sync {{ 'warn' if sy.needs_change else 'ok' }}">
+  <div class="head">
+    <div>
+      <h2>CPAP clock <span class="tag ghost">confidence: {{ sy.confidence }}</span></h2>
+      {% if sy.inherited_from is defined %}
+        <p>No O2Ring this night: reused the CPAP clock correction <b>{{ n.cpap_offset_s|offset }}</b>
+           detected on <a href="/nights/{{ sy.inherited_id }}">{{ sy.inherited_from }}</a>.</p>
+      {% endif %}
+      {% if sy.auto_applied_from is defined %}
+        <p>Auto-corrected: CPAP timestamps shifted by <b>{{ n.cpap_offset_s|offset }}</b>
+           to match the O2Ring (phone) clock.</p>
+      {% endif %}
+      {% if sy.dst_suspected %}
+        <p>⏰ About one hour off: the machine most likely missed the daylight-saving change.
+           ResMed machines never adjust for DST.</p>
+      {% endif %}
+      {% if sy.timezone_suspected %}
+        <p>✈️ Several hours apart: the CPAP is probably still on your home time zone (e.g. travelling).
+           The timeline uses the O2Ring's local time.</p>
+      {% endif %}
+      {% if sy.needs_change %}
+        <p>The CPAP clock looks <b>{{ (sy.suggested_offset_s - n.cpap_offset_s)|offset }}</b> off from the O2Ring.
+           Suggested correction: <b>{{ sy.suggested_offset_s|offset }}</b> (currently {{ n.cpap_offset_s|offset }}).</p>
+      {% elif sy.inherited_from is not defined %}
+        <p>Clocks agree within a few seconds{% if n.cpap_offset_s %} after the {{ n.cpap_offset_s|offset }} correction{% endif %}.</p>
+      {% endif %}
+      <p class="muted small">
+        {% if sy.morning_end_s is defined and sy.morning_end_s is not none %}Morning: the ring's last reading came
+          {{ (sy.morning_end_s|abs / 60)|round|int }} min {{ 'after' if sy.morning_end_s >= 0 else 'before' }} the mask came off
+          {%- if sy.anchored_hour_s is not none %}, which points to {{ 'no clock error' if sy.anchored_hour_s == 0 else ('a correction of ' ~ (sy.anchored_hour_s|offset)) }}{% endif %}.{% endif %}
+        {% if sy.motion %}Mask on/off vs. ring motion: {{ sy.motion.markers_matched }}/{{ sy.motion.markers }} markers matched, {{ sy.motion.prominence }}× stronger than the next-best shift.{% endif %}
+        {% if sy.desat and sy.desat.usable %} SpO₂ check: average nadir {{ sy.desat.nadir_lag_s|int }} s after event end over {{ sy.desat.events_used }} events
+          (expect ~30 s){% if sy.desat_agrees is defined %}: {{ 'agrees' if sy.desat_agrees else 'disagrees, so check manually' }}{% endif %}.{% endif %}
+      </p>
+    </div>
+    {% if sy.needs_change %}
+    <form method="post" action="/nights/{{ n.id }}/reprocess">
+      <input type="hidden" name="engine" value="{{ 'sleepecg' if 'sleepecg' in n.engine else 'heuristic' }}">
+      <input type="hidden" name="offset" value="{{ sy.suggested_offset_s|int }}">
+      <button type="submit">Apply {{ sy.suggested_offset_s|offset }} &amp; re-run</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Timeline</h2>
+  <div id="chart" class="chart"></div>
+  <div class="legend"><span class="sw awake"></span>Awake <span class="sw rem"></span>REM <span class="sw nrem"></span>NREM{% if s.deep_min is defined %} <span class="sw deep"></span>Deep (est.){% endif %}
+    <span class="lg" data-ev="oa"><span class="sw oa"></span>Obstructive</span>
+    <span class="lg" data-ev="ca"><span class="sw ca"></span>Central</span>
+    <span class="lg" data-ev="h"><span class="sw h"></span>Hypopnea</span>
+    <span class="lg" data-ev="ua"><span class="sw ua"></span>Apnea (unclassified)</span>
+    <span class="lg" data-ev="other"><span class="sw other"></span>RERA/other</span>
+    <span class="lg lg-maskoff"><span class="sw maskoff"></span>Mask off</span>
+    {% if n.has_o2ring %}<span class="lg"><span class="sw desat"></span>Desat ≥4%</span>{% endif %}
+    {% if n.wake_log.entries %}<span class="sw logged"></span>You: awake{% endif %}
+    <label><input type="checkbox" id="toggle-events" checked> Show ResMed events</label></div>
+</section>
+
+{% set wl = n.wake_log %}
+<section class="card" id="wake-log">
+  <div class="head">
+    <div>
+      <h2>Your wake log
+        {% if wl.agreement_pct is not none %}<span class="tag {{ 'good' if wl.agreement_pct >= 80 else 'ghost' }}">app agrees on {{ wl.agreement_pct }}% of it</span>{% endif %}</h2>
+      <p class="muted small">Log the times you remember being awake. The app compares them with its staging
+        (shown as a band on the timeline), which shows how far to trust it and helps tune it.
+        Times before noon count as the next morning.</p>
+    </div>
+    <form method="post" action="/nights/{{ n.id }}/wake-log" class="inline">
+      <label>Awake from <input type="time" name="start" required></label>
+      <label>to <input type="time" name="end" required></label>
+      <button type="submit">Add</button>
+    </form>
+  </div>
+  {% if wl.entries %}
+  <table class="segs">
+    <thead><tr><th>From</th><th>To</th><th>Length</th><th>App staged awake</th><th></th></tr></thead>
+    <tbody>{% for w in wl.entries %}
+      <tr><td>{{ w.start[11:16] }}</td><td>{{ w.end[11:16] }}</td><td>{{ w.minutes|hm }}</td>
+        <td>{% if w.agreement_pct is not none %}{{ w.staged_awake_min|hm }} ({{ w.agreement_pct }}%){% else %}<span class="muted">outside the recording</span>{% endif %}</td>
+        <td><form method="post" action="/nights/{{ n.id }}/wake-log/{{ w.i }}/delete"><button class="linkbtn" type="submit" title="Remove">✕</button></form></td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="grid2">
+  <div class="card">
+    <h2>Stage breakdown</h2>
+    <div class="tablewrap tall">
+    <table class="segs">
+      <thead><tr><th>Stage</th><th>From</th><th>To</th><th>Duration</th></tr></thead>
+      <tbody>
+      {% for g in segments %}
+        <tr class="{{ g.stage|lower }}"><td><span class="pill {{ g.stage|lower }}">{{ g.stage }}</span></td>
+          <td>{{ g.start.strftime('%H:%M:%S') }}</td><td>{{ g.end.strftime('%H:%M:%S') }}</td>
+          <td>{{ g.minutes|hm if g.minutes >= 1 else '30 s' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <div class="card">
+    <h2>ResMed events <span class="muted">({{ events|length }})</span></h2>
+    <div class="tablewrap tall">
+    {% if events %}
+    <table class="segs">
+      <thead><tr><th>Time</th><th>Event</th><th>Duration</th></tr></thead>
+      <tbody>{% for e in events %}<tr><td>{{ e.t.strftime('%H:%M:%S') }}</td><td>{{ e.kind }}</td><td>{{ e.duration_s|round|int }} s</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="muted">No EVE.edf events for this night.</p>{% endif %}
+    </div>
+    <h2 style="margin-top:1.2rem">Re-analyse</h2>
+    <form method="post" action="/nights/{{ n.id }}/reprocess" class="opts">
+      <label>Engine
+        <select name="engine">
+          <option value="heuristic" {% if n.engine == 'heuristic' %}selected{% endif %}>Heuristic</option>
+          <option value="sleepecg" {% if not sleepecg %}disabled{% endif %} {% if 'sleepecg' in n.engine %}selected{% endif %}>sleepecg + resp</option>
+        </select></label>
+      <label>CPAP clock correction (s) <input type="number" name="offset" value="{{ n.cpap_offset_s|int }}"
+             title="Added to ResMed timestamps. -3600 = machine still on summer time"></label>
+      <label class="chk"><input type="checkbox" name="dayfirst" value="true"> DD/MM dates</label>
+      <label class="chk"><input type="checkbox" name="auto_sync" value="true"> Auto-correct CPAP clock</label>
+      <button type="submit">Re-run</button>
+    </form>
+    <p class="muted small">Files: {{ n.files|join(', ') }}</p>
+    <form method="post" action="/nights/{{ n.id }}/delete" onsubmit="return confirm('Delete this night and its files?')">
+      <button class="danger" type="submit">Delete night</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static('charts.js') }}"></script>
+<script>
+fetch('/api/nights/{{ n.id }}').then(r => r.json()).then(d => renderNight(document.getElementById('chart'), d));
+</script>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · Sleep Stager{% endblock %}
+{% block content %}
+<div id="trends" data-page="{{ page }}">
+  <header class="pagehead">
+    <div>
+      <h1>{{ title }}</h1>
+      <p class="muted" id="range-label"></p>
+    </div>
+    <div class="filters" role="group" aria-label="Date range">
+      <label class="sr" for="range">Date range</label>
+      <select id="range"></select>
+      <span id="range-custom" class="custom" hidden>
+        <input type="date" id="range-from" aria-label="From"> – <input type="date" id="range-to" aria-label="To">
+      </span>
+    </div>
+  </header>
+  {% if not has_nights %}
+    <section class="card"><p>No nights yet. <a href="/import">Import your SD card and/or O2Ring data</a> to get started.</p></section>
+  {% endif %}
+  <p id="empty" class="card muted" hidden>No nights in this range. Pick a longer range above.</p>
+  <section class="stats" id="tiles"></section>
+  <div class="chartgrid" id="charts"></div>
+  <section class="card">
+    <h2>Nightly data</h2>
+    <div class="tablewrap" id="table"></div>
+  </section>
+</div>
+<script type="application/json" id="nights-data">{{ nights_json|safe }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ static('trends.js') }}"></script>{% endblock %}
