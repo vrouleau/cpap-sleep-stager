@@ -30,6 +30,8 @@ DEFAULTS = {
     "quiet_wake_epochs": 8,  # >= 4 min of aroused signals without movement -> awake
     "motion_wake": 3.0,  # O2Ring motion units summed per epoch
     "arousal_hr_rise": 5.0,  # a movement is wake if the pulse rises this much (bpm) above
+    "arousal_max_epochs": 2,  # wake marks this short (<= 1 min) inside sleep need...
+    "awakening_hr_rise": 8.0,  # ...a pulse jump this big plus movement; else an arousal
     "big_motion": 50.0,  # the previous 3 min, if it is this big (rolling over), or if it
     #                      lasts more than one epoch; otherwise it is a twitch / arousal
     "min_rem_latency_min": 45,
@@ -287,7 +289,25 @@ def stage(epochs: pd.DataFrame, params: dict | None = None,
                 and not mask_off.iloc[s] and labels[s - 1] == labels[e]:
             labels[s] = labels[s - 1]
 
+    # --- brief arousals: a wake mark of <= 1 min in the middle of sleep stays wake only
+    # with a clear awakening (pulse jump AND movement). Turning over without a pulse
+    # change, or a pulse blip without movement, is an arousal: you stay asleep, and the
+    # epoch is flagged so arousals can be counted and shown without inflating wake.
+    arousal = np.zeros(len(labels), dtype=bool)
+    if has_oxi:
+        rise_v, mot_v = rise.to_numpy(), motion.to_numpy()
+        for s, e, lb in list(_runs(labels)):
+            if lb != WAKE or s == 0 or e >= len(labels) or e - s > p["arousal_max_epochs"]:
+                continue
+            if mask_off.iloc[s:e].any() or bwake[s:e].any():
+                continue  # mask off / lying awake on the CPAP: really awake
+            if rise_v[s:e].max() >= p["awakening_hr_rise"] and mot_v[s:e].max() > p["motion_wake"]:
+                continue  # pulse jump with movement: a real brief awakening
+            labels[s:e] = labels[s - 1]
+            arousal[s:e] = True
+
     df["stage"] = labels
+    df["arousal"] = arousal.astype(float) if has_oxi else np.nan
     df.loc[no_data.to_numpy(), "stage"] = WAKE
     # deep-sleep flag inside NREM: 1/0 with the ring, NaN (unknown) without it
     df["deep"] = (_deep(df, df["stage"].to_numpy(), moving.to_numpy(), p).astype(float)

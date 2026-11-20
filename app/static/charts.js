@@ -73,9 +73,16 @@ function renderNight(host, d) {
           const r = el('rect', { x: x(a), y: y0 + 1, width: Math.max(2, x(b) - x(a)), height: 4, class: 'logged', rx: 2 }, svg);
           el('title', {}, r).textContent = `You: awake ${w.start.slice(11, 16)}–${w.end.slice(11, 16)}`;
         }
-        for (const e of events) if (e.source !== 'resmed')
-          el('line', { x1: x(e.t), x2: x(e.t), y1: y0 + p.h - 6, y2: y0 + p.h, class: 'desattick' }, svg);
+        // brief arousals (asleep, but a pulse blip or turning over): ticks under the Awake row
+        for (const e of ep) if (e.arousal > 0) {
+          const t = el('rect', { x: x(e.t.getTime()), y: y0 + rh - 9, width: Math.max(1.5, x(e.t.getTime() + epochMs) - x(e.t.getTime())),
+            height: 7, class: 'arousaltick' }, svg);
+          el('title', {}, t).textContent = `Arousal ${e.t.toTimeString().slice(0, 5)}: still asleep`;
+        }
       } else {
+        // SpO2 desaturations (ring): ticks along the bottom of the SpO2 panel itself
+        if (p.key === 'spo2') for (const e of events) if (e.source !== 'resmed')
+          el('line', { x1: x(e.t), x2: x(e.t), y1: y0 + p.h - 6, y2: y0 + p.h, class: 'desattick' }, svg);
         const vals = ep.map(e => e[p.key]).filter(v => v != null);
         let lo = p.min ?? Math.min(...vals), hi = p.max ?? Math.max(...vals);
         if (p.bars) lo = 0;

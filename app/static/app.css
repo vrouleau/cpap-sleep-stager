@@ -119,6 +119,8 @@ form.inline label { display: flex; flex-direction: column; font-size: .82rem; co
 .maskoff rect { fill: var(--muted); opacity: .16; }
 .maskoff:hover rect { opacity: .28; }
 .sw.maskoff { background: var(--muted); opacity: .4; }
+svg .arousaltick { fill: var(--awake); opacity: .55; }
+.sw.arousal { background: var(--awake); opacity: .55; width: 4px; }
 
 /* ---------- app shell: sidebar navigation (top strip on narrow screens) ---------- */
 .shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }

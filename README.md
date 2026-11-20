@@ -19,7 +19,7 @@ For each 30-second epoch it computes features over a 2-minute window, then stage
 
 * **NREM**: metronomic breathing, low and steady pulse, no movement.
 * **REM**: irregular breathing (rate *and* depth), more variable pulse, but no movement (atonia). It is suppressed in the first 45 min after sleep onset.
-* **Awake**: seeded by movement that means waking (the pulse jumps 5+ bpm, the movement is big, or it lasts more than one epoch; a lone twitch or small position change is not wake) or by mask removal, then grown into neighbouring epochs whose pulse is above an **adaptive cut** that lies between *this night's* NREM pulse and its movement-confirmed wake pulse. Stretches of 4 minutes or more above the cut count as awake even without movement (lying awake quietly).
+* **Awake**: seeded by movement that means waking (the pulse jumps 5+ bpm, the movement is big, or it lasts more than one epoch; a lone twitch or small position change is not wake) or by mask removal, then grown into neighbouring epochs whose pulse is above an **adaptive cut** that lies between *this night's* NREM pulse and its movement-confirmed wake pulse. Stretches of 4 minutes or more above the cut count as awake even without movement (lying awake quietly). Inside sleep, a wake mark of 1 minute or less stays awake only with both a pulse jump of 8+ bpm and movement. Otherwise it is an *arousal*: you stay asleep, and it is counted per hour and shown as a tick on the timeline.
 
 All thresholds are relative to the night itself (robust z-scores), so the rules adapt to you. It also works with only one source, though less accurately: CPAP-only cannot really separate quiet wake from REM, and O2Ring-only has no breathing data.
 
@@ -61,11 +61,16 @@ To build from source instead: clone the repo and run `docker compose up -d --bui
 
 ### Releases
 
-Every push to `main` runs the tests and publishes `edge`. Tagging a version publishes `latest` and the version tags once the tests pass, and creates a GitHub Release with notes generated from the commits:
+Every push to `main` runs the tests and publishes `edge`. Tagging a version publishes `latest` and the version tags once the tests pass, and creates a GitHub Release with notes generated from the commits. Cut releases with the script (Git Bash on Windows, or any shell with git and the GitHub CLI):
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+scripts/release.sh patch   # v0.1.0 -> v0.1.1: fixes
+scripts/release.sh minor   # v0.1.1 -> v0.2.0: new features
+scripts/release.sh major   # v0.2.0 -> v1.0.0: breaking changes
+scripts/release.sh minor --dry-run   # show the version and changes, touch nothing
 ```
+
+It refuses to tag unless you are on `main` with nothing uncommitted or unpushed, CI passed on that exact commit, and there are commits since the last release. It then shows the changes, asks for confirmation, and pushes the tag. GitHub does the rest.
 
 Data lives in `./data` (`sleep.db` plus the original uploaded files, kept so a night can be re-analysed after an algorithm change or a clock-offset fix). SQLite is the default. Set `DATABASE_URL` to use Postgres (add `psycopg[binary]` to `requirements.txt`).
 
