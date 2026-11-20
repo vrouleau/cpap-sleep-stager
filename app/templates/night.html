@@ -2,7 +2,7 @@
 {% block title %}Night {{ n.night_date }} · Sleep Stager{% endblock %}
 {% block content %}{% set s = n.summary %}
 <nav class="crumbs">
-  <a href="/">← History</a>
+  <a href="/nights{{ '?page=%d' % list_page if list_page > 1 }}">← Nights</a>
   <span class="spacer"></span>
   {% if prev_id %}<a href="/nights/{{ prev_id }}">‹ previous night</a>{% endif %}
   {% if next_id %}<a href="/nights/{{ next_id }}">next night ›</a>{% endif %}
@@ -103,7 +103,8 @@
     <span class="lg" data-ev="h"><span class="sw h"></span>Hypopnea</span>
     <span class="lg" data-ev="ua"><span class="sw ua"></span>Apnea (unclassified)</span>
     <span class="lg" data-ev="other"><span class="sw other"></span>RERA/other</span>
-    <span class="sw desat"></span>Desat ≥4%
+    <span class="lg lg-maskoff"><span class="sw maskoff"></span>Mask off</span>
+    {% if n.has_o2ring %}<span class="lg"><span class="sw desat"></span>Desat ≥4%</span>{% endif %}
     {% if n.wake_log.entries %}<span class="sw logged"></span>You: awake{% endif %}
     <label><input type="checkbox" id="toggle-events" checked> Show ResMed events</label></div>
 </section>
@@ -183,7 +184,7 @@
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="/static/charts.js"></script>
+<script src="{{ static('charts.js') }}"></script>
 <script>
 fetch('/api/nights/{{ n.id }}').then(r => r.json()).then(d => renderNight(document.getElementById('chart'), d));
 </script>

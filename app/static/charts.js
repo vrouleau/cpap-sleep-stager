@@ -22,6 +22,19 @@ function renderNight(host, d) {
   const events = d.events.map(e => ({ ...e, t: new Date(e.t) }));
 
   const panels = [{ key: 'hyp', h: hasDeep ? 140 : 110, label: 'Stage' }];
+  const maskOff = [];
+  {
+    const on = ep.map(e => e.flow_present === 1);
+    const first = on.indexOf(true), last = on.lastIndexOf(true);
+    for (let i = first; first >= 0 && i < last; i++) {
+      if (on[i]) continue;
+      let j = i; while (j < last && !on[j]) j++;
+      maskOff.push([i, j]);
+      i = j;
+    }
+  }
+  const lgMask = document.querySelector('.legend .lg-maskoff');
+  if (lgMask) lgMask.style.display = maskOff.length ? '' : 'none';
   const has = k => ep.some(e => e[k] != null);
   if (has('hr')) panels.push({ key: 'hr', h: 70, label: 'Pulse bpm', color: 'var(--line1)' });
   if (has('spo2')) panels.push({ key: 'spo2', h: 60, label: 'SpO₂ %', color: 'var(--line2)', min: 85, max: 100 });
@@ -88,6 +101,15 @@ function renderNight(host, d) {
       }
       y0 += p.h + gap;
     }
+    // mask off and back on: gaps without CPAP flow between the night's first and last session
+    for (const [a, b] of maskOff) {
+      const xa = x(ep[a].t.getTime()), xb = x(ep[b - 1].t.getTime() + epochMs);
+      const g = el('g', { class: 'maskoff' }, svg);
+      el('rect', { x: xa, y: 0, width: Math.max(2, xb - xa), height: y0 - gap }, g);
+      const mins = (b - a) * d.epoch_s / 60;
+      el('title', {}, g).textContent = `Mask off ${hhmm(ep[a].t)}–${hhmm(new Date(ep[b - 1].t.getTime() + epochMs))}` +
+        ` (${mins < 1 ? '<1' : Math.round(mins)} min)`;
+    }
     // time axis
     const hour = 3600e3, first = Math.ceil(t0 / hour) * hour;
     for (let t = first; t <= t1; t += hour) {
@@ -129,7 +151,15 @@ function renderNight(host, d) {
   let showEvents = true;
   const toggle = document.getElementById('toggle-events');
   if (toggle) {
-    if (!events.some(e => e.source === 'resmed')) toggle.closest('label').style.display = 'none';
+    if (!events.some(e => e.source === 'resmed')) {
+      const label = toggle.closest('label');
+      if (!d.has_resmed) label.style.display = 'none';  // ring-only night: no CPAP at all
+      else {  // CPAP night with zero events: say so instead of hiding the control
+        toggle.checked = false; toggle.disabled = true;
+        label.classList.add('none');
+        label.lastChild.textContent = ' No ResMed events this night';
+      }
+    }
     toggle.addEventListener('change', () => {
       showEvents = toggle.checked;
       host.querySelector('.evlayer')?.classList.toggle('hidden', !showEvents);

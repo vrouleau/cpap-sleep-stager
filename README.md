@@ -46,6 +46,17 @@ docker compose up -d --build
 
 Data lives in `./data` (`sleep.db` plus the original uploaded files, kept so a night can be re-analysed after an algorithm change or a clock-offset fix). SQLite is the default. Set `DATABASE_URL` to use Postgres (add `psycopg[binary]` to `requirements.txt`).
 
+### Dashboard
+
+A sidebar (a tab strip on phones) with four sections:
+
+* **Sleep trends** (home): averages for the range, then sleep stages per night (deep, light NREM, REM, awake), sleep window (falling asleep to final awakening), sleep efficiency, awake after falling asleep, and pulse while asleep (O2Ring nights).
+* **CPAP trends**: AHI by event type (obstructive, central, hypopnea, unclassified, counted only while asleep), usage with a 4 h line, mask breaks, breathing rate while asleep, and on O2Ring nights ODI 4% and lowest SpO₂.
+* **Nights**: every night in a table; open one for its timeline.
+* **Data import**: the upload below, plus the most recent imports.
+
+One date-range control above the charts scopes the tiles, every chart and the table: last 7, 30 or 90 days, last 12 months, this month, last month, this year, all nights, or a custom range. It is kept in the URL, so switching tabs keeps it. Ranges over 3 months show weekly averages. Hover a bar or point for its values, and click it to open that night. Colours for stages and event types were checked for colour-blind separation in light and dark mode.
+
 ### Uploading
 
 * **Drag in whole folders**, or use *Choose folder*: the ResMed SD card (or its `DATALOG` folder) and/or O2 Insight Pro's `DATA` folder (`%LOCALAPPDATA%\O2 Insight Pro\DATA`). Loose `*_BRP.edf` / `*_EVE.edf` files, O2Ring CSVs or a zip work too. The browser keeps only what the analysis uses (it skips `STR.edf`, `SETTINGS`, PLD/SAD/CSL and the rest), shows what it found per night before uploading, and leaves out nights you already have unless *Replace* is ticked, so re-inserting the card only uploads the new nights. Uploads go in batches, oldest night first, with progress and a per-night result list. Nights are split automatically, noon to noon, and named after the evening they start. PLD/SAD/CSL files are ignored. Short CPAP sessions (under 30 min in all) more than 2 h away from the night's main recording, such as testing the machine or a mask in the afternoon or for a minute the next morning, are left out so the hours in between don't count as awake. The night page lists what was ignored. A new night with less than 1 h of recording in total is not imported at all (the upload reports it as skipped).

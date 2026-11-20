@@ -231,3 +231,13 @@ def test_stray_cpap_vs_ring_night():
     ring = [(datetime(2026, 10, 27, 21, 25), datetime(2026, 10, 28, 5, 40))]
     assert [d["files"] for d in drop_stray_sessions(night, ring)] == [["t"]]
     assert night.segments == []
+
+
+def test_nights_pager():
+    from app.main import _pager
+
+    assert _pager(1, 1) == [1]
+    assert _pager(1, 2) == [1, 2]
+    assert _pager(1, 10) == [1, 2, 3, None, 10]
+    assert _pager(6, 13) == [1, None, 4, 5, 6, 7, 8, None, 13]
+    assert _pager(13, 13) == [1, None, 11, 12, 13]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
 import tempfile
 from contextlib import asynccontextmanager
@@ -31,6 +32,19 @@ async def lifespan(_app):
 app = FastAPI(title="CPAP Sleep Stager", version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
+
+
+def _static(name: str) -> str:
+    """URL of a static file with its modification time appended, so browsers fetch a
+    changed stylesheet or script instead of reusing a stale cached copy after an update."""
+    try:
+        v = int((BASE / "static" / name).stat().st_mtime)
+    except OSError:
+        v = 0
+    return f"/static/{name}?v={v}"
+
+
+templates.env.globals["static"] = _static
 
 
 def _fmt_min(m):
@@ -182,14 +196,77 @@ def _opts(engine: str, offset: float, dayfirst: bool, age: str | None, gender: s
 
 
 # ---------------------------------------------------------------- HTML
-@app.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def _trend_rows() -> list[dict]:
+    """Per-night summaries for the trend dashboards (charts filter them by range)."""
     with SessionLocal() as db:
-        nights = db.query(Night).order_by(Night.night_date.desc()).all()
-        rows = [_night_dict(n) for n in nights]
-    trend = [{"id": r["id"], "d": r["night_date"], "s": r["summary"]} for r in reversed(rows)]
-    return templates.TemplateResponse(request, "index.html", {
-        "nights": rows, "trend": trend, "sleepecg": sleepecg_engine.available()})
+        rows = db.query(Night.id, Night.night_date, Night.has_resmed, Night.has_o2ring,
+                        Night.summary).order_by(Night.night_date).all()
+    return [{"id": r.id, "d": r.night_date.isoformat(), "cpap": r.has_resmed,
+             "ring": r.has_o2ring, "s": {k: v for k, v in (r.summary or {}).items() if k != "sync"}}
+            for r in rows]
+
+
+def _trends(request: Request, page: str, title: str):
+    rows = _trend_rows()
+    if not rows:
+        return RedirectResponse("/import", status_code=303)
+    # embedded in a <script type="application/json">: keep "</" out of it
+    data = json.dumps(_jsonsafe(rows)).replace("</", "<\\/")
+    return templates.TemplateResponse(request, "trends.html", {
+        "active": page, "page": page, "title": title, "has_nights": bool(rows),
+        "nights_json": data})
+
+
+@app.get("/", response_class=HTMLResponse)
+def sleep_trends(request: Request):
+    return _trends(request, "sleep", "Sleep trends")
+
+
+@app.get("/cpap", response_class=HTMLResponse)
+def cpap_trends(request: Request):
+    return _trends(request, "cpap", "CPAP trends")
+
+
+NIGHTS_PER_PAGE = 30
+
+
+def _pager(page: int, pages: int) -> list[int | None]:
+    """Page numbers to show: first, last, and two either side of the current one
+    (None = a gap)."""
+    keep = {1, pages, *range(page - 2, page + 3)}
+    out: list[int | None] = []
+    for p in range(1, pages + 1):
+        if p in keep:
+            out.append(p)
+        elif out and out[-1] is not None:
+            out.append(None)
+    return out
+
+
+@app.get("/nights", response_class=HTMLResponse)
+def nights_page(request: Request, page: int = 1):
+    with SessionLocal() as db:
+        total = db.query(Night).count()
+        pages = max(1, -(-total // NIGHTS_PER_PAGE))
+        page = min(max(1, page), pages)
+        rows = [_night_dict(n) for n in db.query(Night).order_by(Night.night_date.desc())
+                .offset((page - 1) * NIGHTS_PER_PAGE).limit(NIGHTS_PER_PAGE)]
+    first = (page - 1) * NIGHTS_PER_PAGE + 1 if total else 0
+    return templates.TemplateResponse(request, "nights.html", {
+        "active": "nights", "nights": rows, "total": total, "page": page, "pages": pages,
+        "first": first, "last": first + len(rows) - 1, "pager": _pager(page, pages)})
+
+
+@app.get("/import", response_class=HTMLResponse)
+def import_page(request: Request, imported: int | None = None):
+    with SessionLocal() as db:
+        recent = db.query(Night).order_by(Night.created_at.desc()).limit(30).all()
+        recent = [{"id": n.id, "night_date": n.night_date, "has_resmed": n.has_resmed,
+                   "has_o2ring": n.has_o2ring, "files": n.files or [], "created_at": n.created_at}
+                  for n in recent]
+    return templates.TemplateResponse(request, "import.html", {
+        "active": "import", "recent": recent, "imported": imported,
+        "sleepecg": sleepecg_engine.available()})
 
 
 @app.post("/upload")
@@ -203,7 +280,7 @@ async def upload_form(files: list[UploadFile] = File(...), engine: str = Form("h
     ok = [r for r in results if "id" in r]
     if len(ok) == 1:
         return RedirectResponse(f"/nights/{ok[0]['id']}", status_code=303)
-    return RedirectResponse("/?imported=" + str(len(ok)), status_code=303)
+    return RedirectResponse("/import?imported=" + str(len(ok)), status_code=303)
 
 
 @app.get("/nights/{night_id}", response_class=HTMLResponse)
@@ -216,10 +293,13 @@ def night_page(request: Request, night_id: int):
             .order_by(Night.night_date.desc()).first()
         next_n = db.query(Night).filter(Night.night_date > n.night_date) \
             .order_by(Night.night_date).first()
+        # the Nights page (newest first) that lists this night, for the back link
+        newer = db.query(Night).filter(Night.night_date > n.night_date).count()
         ctx = {"n": _night_dict(n), "segments": _segments(n),
                "events": [e for e in n.events if e.source == "resmed"],
                "prev_id": prev_n.id if prev_n else None, "next_id": next_n.id if next_n else None,
-               "sleepecg": sleepecg_engine.available()}
+               "sleepecg": sleepecg_engine.available(), "active": "nights",
+               "list_page": newer // NIGHTS_PER_PAGE + 1}
     return templates.TemplateResponse(request, "night.html", ctx)
 
 
@@ -252,7 +332,7 @@ def wake_log_delete_form(night_id: int, i: int):
 @app.post("/nights/{night_id}/delete")
 def delete_form(night_id: int):
     _delete(night_id)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/nights", status_code=303)
 
 
 # ---------------------------------------------------------------- JSON API

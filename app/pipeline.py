@@ -249,6 +249,18 @@ def summarize(epochs: pd.DataFrame, events: list[dict], oxi: dict | None) -> dic
                     and sleep[int((e["t"] - t0).total_seconds() // EPOCH_S)]]
         s["ahi_sleep"] = round(len(in_sleep) / (tst / 60), 1) if tst else None
         s["resp_events"] = len(apneas)
+        # AHI split by event type, for the CPAP trend chart (same in-sleep rule)
+        s["ahi_by_kind"] = {k: round(sum(e["kind"] == k for e in in_sleep) / (tst / 60), 2)
+                            for k in sorted(APNEA_KINDS)} if tst else {}
+        s["rera_count"] = sum(1 for e in events if e["source"] == "resmed"
+                              and e["kind"] not in APNEA_KINDS)
+    if "flow_present" in epochs and epochs["flow_present"].notna().any():
+        # CPAP use: time with the mask on, and how often it came off and went back on
+        on = epochs["flow_present"].fillna(0).to_numpy() >= 1
+        s["usage_min"] = round(on.sum() * ep_min, 1)
+        if on.any():
+            a, b = int(np.argmax(on)), int(len(on) - np.argmax(on[::-1]))
+            s["mask_breaks"] = sum(1 for _, _, lb in heuristic._runs(on[a:b]) if not lb)
     hr_sleep = epochs.loc[sleep, "hr"]
     if hr_sleep.notna().any():
         s["hr_sleep_mean"] = round(float(hr_sleep.mean()), 1)
