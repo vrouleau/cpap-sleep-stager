@@ -21,6 +21,7 @@ from app.ingest.resmed import (_RESMED_NAME, classify_resmed_file, drop_stray_se
 from app.staging import engine as heuristic
 from app.staging import sleepecg_engine
 from app.staging import arousal as arousals_mod
+from app.staging import awakenings as awakenings_mod
 from app.staging import sync as clocksync
 from app.staging.features import EPOCH_S, build_epochs
 
@@ -187,6 +188,8 @@ def analyze(paths: list[Path], opts: ProcessOptions) -> dict:
         "has_o2ring": oxi is not None,
         "engine": engine_used,        "trimmed": trimmed,
         "recorded_min": _recorded_min(resmed, oxi),
+        # what each awakening looked like (pulse ramp, stage before, trigger, mask off)
+        "wakeups": awakenings_mod.detect(staged, oxi.data if oxi is not None else None, events),
     }
 
 
@@ -364,6 +367,7 @@ def _fill(night: Night, result: dict, opts: ProcessOptions, paths: list[Path]) -
     night.age, night.gender = opts.age, opts.gender
     night.files = [p.name for p in paths]
     night.summary = summarize(ep, result["events"], result["oximetry"])
+    night.summary.update(_jsonable(awakenings_mod.summarize(ep, result.get("wakeups") or [])))
     if result.get("sync"):
         night.summary["sync"] = _jsonable(result["sync"])
     if result.get("trimmed"):
@@ -385,6 +389,10 @@ def _jsonable(o):
         return None if not np.isfinite(o) else float(o)
     if isinstance(o, np.integer):
         return int(o)
+    if isinstance(o, np.bool_):
+        return bool(o)
+    if isinstance(o, np.str_):
+        return str(o)
     return o
 
 

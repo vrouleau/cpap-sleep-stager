@@ -116,6 +116,33 @@
     <label><input type="checkbox" id="toggle-arousals" checked> Show arousals</label></div>{% endif %}
 </section>
 
+{% if s.wakeups %}
+<section class="card">
+  <h2>Wake-ups <span class="muted small">{{ s.wakeups_night }} in the night{% if s.wakeups_2to5 %} · {{ s.wakeups_2to5 }} between 2 and 5 am{% endif %}</span></h2>
+  <p class="muted small">How each awakening started, from the O2Ring pulse (relative to tonight's normal for the stage). <b>Gradual</b>: the pulse had been climbing for 30–60 min before. That's a slow internal build-up, which a body-clock rise (cortisol, adrenaline), a filling bladder or a blood-sugar dip can all cause. The pulse can't tell those apart or measure cortisol. <b>Abrupt</b>: flat, then a jump at waking, so something woke you. <b>Quiet</b>: no clear pulse change. "Stayed up": 2–5 min into a longer wake-up the pulse was still high, as with a racing mind.</p>
+  <div class="tablewrap">
+  <table class="segs wake-table">
+    <thead><tr><th>Time</th><th>Lasted</th><th>Out of</th><th>How it started</th><th>Just before</th><th>Afterwards</th><th>Mask</th></tr></thead>
+    <tbody>
+    {% for w in s.wakeups %}
+      <tr>
+        <td>{{ w.t[11:16] }}{% if w.kind == 'final' %} <span class="tag ghost">final</span>{% endif %}</td>
+        <td>{{ w.minutes|hm if w.minutes >= 1 else '<1 min' }}</td>
+        <td>{% if w.stage_before %}<span class="pill {{ w.stage_before|lower }}">{{ w.stage_before }}</span>{% endif %}{% if w.from_rem and w.stage_before != 'REM' %} <span class="muted small">after REM</span>{% endif %}</td>
+        <td>{% if w.onset %}<span class="onset {{ w.onset }}">{{ w.onset }}</span>
+          <span class="muted small">{% if w.rise_before is not none %}{{ '%+.0f'|format(w.rise_before) }} bpm over the hour{% endif %}{% if w.jump_at_wake is not none %} · jump {{ '%+.0f'|format(w.jump_at_wake) }}{% endif %}</span>
+          {% else %}<span class="muted">no pulse</span>{% endif %}</td>
+        <td>{{ w.before|join(', ') if w.before else '–' }}</td>
+        <td>{% if w.pulse_after is not none %}{% if w.alert %}<b>stayed up</b> {% endif %}<span class="muted small">{{ '%+.0f'|format(w.pulse_after) }} bpm</span>{% else %}–{% endif %}</td>
+        <td>{{ 'off' if w.mask_off else ('on' if w.mask_off is not none else '–') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
 {% set wl = n.wake_log %}
 <section class="card" id="wake-log">
   <div class="head">

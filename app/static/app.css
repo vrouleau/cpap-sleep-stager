@@ -275,3 +275,15 @@ svg.tchart { display: block; overflow: visible; max-width: 100%; }
   .tchart .hit { display: none; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* wake-up analysis */
+.onset { display: inline-block; padding: 0 .45rem; border-radius: 99px; font-size: .78rem; border: 1px solid var(--line); }
+.onset.gradual { background: color-mix(in srgb, var(--rem) 18%, transparent); }
+.onset.abrupt { background: color-mix(in srgb, var(--awake) 22%, transparent); }
+.onset.quiet { color: var(--muted); }
+.wake-table td { vertical-align: top; }
+.reanalyse .inline-form { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; }
+.reanalyse p { margin: .2rem 0; }
+.cmp-table td:first-child { color: var(--muted); }
+.cmp-table td, .cmp-table th { text-align: right; } .cmp-table td:first-child, .cmp-table th:first-child { text-align: left; }
+svg .earlyband { fill: var(--rem); opacity: .07; }

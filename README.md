@@ -44,9 +44,9 @@ To build from source instead: clone the repo and run `docker compose up -d --bui
 
 A sidebar (a tab strip on phones) with five sections:
 
-* **Sleep trends** (home): averages for the range, then sleep stages per night (deep, light NREM, REM, awake), sleep window (falling asleep to final awakening), sleep efficiency, awake after falling asleep, and pulse while asleep (O2Ring nights).
+* **Sleep trends** (home): averages for the range, then sleep stages per night (deep, light NREM, REM, awake), sleep window (falling asleep to final awakening), sleep efficiency, awake after falling asleep, arousals by likely cause, and pulse while asleep (O2Ring nights). At the end, **wake-ups before vs with CPAP** (ring-only nights vs CPAP nights in the range): minutes awake per clock hour with 2–5 am shaded, and a side-by-side table (wake-ups per night, how many between 2 and 5 am, final awakening time, how they started, out of REM, pulse still up). Set the range to *All nights* to include the weeks before CPAP.
+* **Nights**: every night in a table, 30 per page, newest first. Open one for its timeline. **Re-analyse all nights** reruns every night with its own engine and clock correction, oldest first, in the background, so older nights get the newest analysis.
 * **CPAP trends**: AHI by event type (obstructive, central, hypopnea, unclassified, counted only while asleep), usage with a 4 h line, mask breaks, breathing rate while asleep, and on O2Ring nights ODI 4% and lowest SpO₂.
-* **Nights**: every night in a table, 30 per page, newest first. Open one for its timeline.
 * **Reports**: see below.
 * **Data import**: upload, plus the most recent imports.
 
@@ -62,6 +62,14 @@ The timeline stacks the stages (with *Deep* as its own row on O2Ring nights) ove
 * SpO₂ drops of 4% or more along the SpO₂ panel.
 
 Below the timeline are tiles (time asleep, awake, NREM/REM/deep, REM latency, AHI, ODI, pulse, breathing rate), the CPAP clock check (see below), a stage-by-stage table, the ResMed event list and a *Re-run* form. *Epochs CSV* and *JSON* export everything.
+
+**Wake-ups.** One row per awakening of a minute or more, plus the final one. It shows when it happened, how long it lasted, and which stage it came out of (and whether REM was in the 5 minutes before). It also shows what happened in the 2 minutes before (CPAP event, O₂ dip, movement), whether the mask came off (you probably got up), and **how it started**, read from the O2Ring pulse:
+
+* *gradual:* the pulse had been climbing for 30–60 min (≥ 3 bpm). That's a slow internal build-up. The body clock's early-morning rise (cortisol, adrenaline), a filling bladder or a blood-sugar dip can all look like this. The pulse can't tell them apart, and it doesn't measure cortisol.
+* *abrupt:* flat, then a jump of ≥ 8 bpm at waking, so something woke you (noise, pain, a breathing event, a partner).
+* *quiet:* no clear pulse change.
+
+The pulse is compared with the night's normal for each stage, because REM runs a few bpm above NREM. Otherwise every wake-up out of REM would look like a climb. Scoring can place a slowly building wake-up a few minutes early, so the analysis finds the actual pulse step within 10 minutes of it. On longer wake-ups, *stayed up* means the pulse was still high 2–5 minutes in, as with a racing mind rather than a brief wake-and-roll-over. On simulated nights every wake-up was found and about 4 in 5 got the right gradual/abrupt label. Read it as a pattern over many nights, not a verdict on one.
 
 **Your wake log.** Log the times you remember being awake (for example *01:30 to 05:15* after the dog woke you). They show as a dark band on the timeline, and the page reports how much of that time the app also staged as awake. It is the only ground truth you have without a sleep lab. Use it to judge how far to trust a night, and as data for tuning the rules. Log entries survive re-runs and re-uploads.
 
@@ -147,6 +155,8 @@ GET    /api/nights/{id}/epochs.csv         per-epoch export
 POST   /api/nights/{id}/wake-log           {"start": "01:30", "end": "05:15"} (before noon = next morning)
 DELETE /api/nights/{id}/wake-log/{index}
 DELETE /api/nights/{id}
+POST   /api/reprocess-all?dayfirst=false   re-analyse every night in the background
+GET    /api/reprocess-all                  progress: running, done, total, errors
 ```
 
 Bulk import from the SD card, for example from a homelab cron job:
@@ -175,6 +185,7 @@ app/
   staging/features.py         breath detection + per-epoch features
   staging/engine.py           heuristic staging: wake, REM, deep, arousals (+ ML-prior fusion)
   staging/arousal.py          pulse-surge arousals + likely-cause tagging
+  staging/awakenings.py       per wake-up: onset shape, stage before, trigger, pulse after
   staging/sleepecg_engine.py  optional sleepecg prior
   staging/sync.py             CPAP vs O2Ring clock-offset detection (DST, drift, travel)
   pipeline.py                 upload → nights → analysis → summary → DB
