@@ -27,6 +27,8 @@ BASE = Path(__file__).parent
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
+    # SLEEPECG=true: the optional engine (baked into the image) is used; load it once
+    sleepecg_engine.bootstrap()
     yield
 
 
@@ -223,6 +225,8 @@ async def _ingest(files: list[UploadFile], opts: pipeline.ProcessOptions, replac
 
 def _opts(engine: str, offset: float, dayfirst: bool, age: str | None, gender: str | None,
           auto_sync: bool = False):
+    if engine not in ("heuristic", "sleepecg"):  # not chosen: follow the SLEEPECG switch
+        engine = sleepecg_engine.default_engine()
     return pipeline.ProcessOptions(
         engine=engine, cpap_offset_s=offset, dayfirst=dayfirst, auto_sync=auto_sync,
         age=int(age) if age else None, gender=gender or None)
@@ -308,11 +312,12 @@ def import_page(request: Request, imported: int | None = None):
                   for n in recent]
     return templates.TemplateResponse(request, "import.html", {
         "active": "import", "recent": recent, "imported": imported,
-        "sleepecg": sleepecg_engine.available()})
+        "sleepecg": sleepecg_engine.available(),
+        "sleepecg_status": sleepecg_engine.status()})
 
 
 @app.post("/upload")
-async def upload_form(files: list[UploadFile] = File(...), engine: str = Form("heuristic"),
+async def upload_form(files: list[UploadFile] = File(...), engine: str = Form("auto"),
                       offset: float = Form(0.0), dayfirst: bool = Form(False),
                       replace: bool = Form(False), age: str | None = Form(None),
                       gender: str | None = Form(None), notes: str | None = Form(None),
@@ -340,7 +345,8 @@ def night_page(request: Request, night_id: int):
         ctx = {"n": _night_dict(n), "segments": _segments(n),
                "events": [e for e in n.events if e.source == "resmed"],
                "prev_id": prev_n.id if prev_n else None, "next_id": next_n.id if next_n else None,
-               "sleepecg": sleepecg_engine.available(), "active": "nights",
+               "sleepecg": sleepecg_engine.available(),
+               "sleepecg_status": sleepecg_engine.status(), "active": "nights",
                "list_page": newer // NIGHTS_PER_PAGE + 1}
     return templates.TemplateResponse(request, "night.html", ctx)
 
@@ -380,7 +386,8 @@ def delete_form(night_id: int):
 # ---------------------------------------------------------------- JSON API
 @app.get("/api/health")
 def health():
-    return {"ok": True, "sleepecg": sleepecg_engine.available(), "version": APP_VERSION["label"]}
+    return {"ok": True, "sleepecg": sleepecg_engine.available(),
+            "sleepecg_status": sleepecg_engine.status(), "version": APP_VERSION["label"]}
 
 
 @app.get("/api/nights")
@@ -390,7 +397,7 @@ def api_nights():
 
 
 @app.post("/api/nights")
-async def api_upload(files: list[UploadFile] = File(...), engine: str = Form("heuristic"),
+async def api_upload(files: list[UploadFile] = File(...), engine: str = Form("auto"),
                      offset: float = Form(0.0), dayfirst: bool = Form(False),
                      replace: bool = Form(True), age: str | None = Form(None),
                      gender: str | None = Form(None), auto_sync: bool = Form(False),

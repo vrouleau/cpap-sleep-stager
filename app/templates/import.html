@@ -26,8 +26,8 @@
           <label>Engine
             <select name="engine">
               <option value="heuristic">Cardio-respiratory heuristic</option>
-              <option value="sleepecg" {% if not sleepecg %}disabled{% endif %}>
-                sleepecg + respiratory{% if not sleepecg %} (not installed){% endif %}</option>
+              <option value="sleepecg" {% if not sleepecg %}disabled{% else %}selected{% endif %}>
+                sleepecg + respiratory{% if not sleepecg %} ({{ 'not in this image' if sleepecg_status is defined and sleepecg_status.status == 'missing' else 'off: set SLEEPECG=true' }}){% endif %}</option>
             </select></label>
           <label>CPAP clock correction (s)
             <input type="number" name="offset" value="0" step="1"

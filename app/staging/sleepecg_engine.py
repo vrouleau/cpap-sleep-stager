@@ -6,13 +6,18 @@ integrating that pulse rate. Mean heart rate and slow HRV components survive; tr
 beat-to-beat variability (RMSSD, HF power) does not. Expect it to be a reasonable
 wake/sleep separator and a weaker REM detector than with a real ECG.
 
-Install with the Docker build arg ``WITH_SLEEPECG=true`` (adds keras + jax, ~600 MB).
+The packages (keras + jax + sleepecg, ~400 MB) are baked into the Docker image. Whether
+the app uses them is a runtime switch: ``SLEEPECG=true`` offers the engine and makes it
+the default for new imports; ``SLEEPECG=false`` (the default) hides it. Build with
+``--build-arg WITH_SLEEPECG=false`` for a slimmer image without it.
 """
 
 from __future__ import annotations
 
+import importlib
 import logging
 import os
+import threading
 from datetime import datetime
 
 import numpy as np
@@ -23,15 +28,68 @@ from app.staging.features import EPOCH_S
 logger = logging.getLogger(__name__)
 _CLF = None
 
+_ON = {"1", "true", "yes", "on"}
+_installed: bool | None = None  # are keras + sleepecg in this image? (checked once)
+
+
+def wanted() -> bool:
+    """The runtime switch: SLEEPECG=true (WITH_SLEEPECG accepted as an alias)."""
+    v = os.environ.get("SLEEPECG", os.environ.get("WITH_SLEEPECG", ""))
+    return v.strip().lower() in _ON
+
+
+def installed() -> bool:
+    """keras + sleepecg importable (baked into the image)."""
+    global _installed
+    if _installed is None:
+        os.environ.setdefault("KERAS_BACKEND", "jax")
+        os.environ.setdefault("JAX_PLATFORMS", "cpu")  # no GPU/TPU probing on a NAS
+        importlib.invalidate_caches()
+        try:
+            import keras  # noqa: F401
+            import sleepecg  # noqa: F401
+            _installed = True
+        except Exception:  # noqa: BLE001
+            _installed = False
+    return _installed
+
 
 def available() -> bool:
-    os.environ.setdefault("KERAS_BACKEND", "jax")
-    try:
-        import keras  # noqa: F401
-        import sleepecg  # noqa: F401
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+    """The engine can be used: switched on AND present in the image."""
+    return wanted() and installed()
+
+
+def default_engine() -> str:
+    """What new imports use when no engine is chosen."""
+    return "sleepecg" if available() else "heuristic"
+
+
+def status() -> dict:
+    """For /api/health and the engine pickers."""
+    on, have = wanted(), installed()
+    st = "on" if on and have else "missing" if on else "off"
+    return {"enabled": on, "installed": have, "available": on and have, "status": st}
+
+
+def bootstrap(background: bool = True) -> None:
+    """At startup with the switch on: load the model once so the first analysis is fast."""
+    if not available():
+        if wanted():
+            logger.warning("SLEEPECG=true but sleepecg is not in this image "
+                           "(built with WITH_SLEEPECG=false); using the heuristic engine")
+        return
+
+    def warm():
+        try:
+            _classifier()
+            logger.info("sleepecg engine ready")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not load the sleepecg model: %s", exc)
+
+    if background:
+        threading.Thread(target=warm, name="sleepecg-warmup", daemon=True).start()
+    else:
+        warm()
 
 
 def _classifier():

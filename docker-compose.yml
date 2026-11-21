@@ -1,21 +1,21 @@
 services:
   sleep-stager:
-    # Prebuilt image from GitHub (Intel and ARM). Update with:
+    # Prebuilt image from GitHub (Intel/AMD, linux/amd64). Update with:
     #   docker compose pull && docker compose up -d
-    # Tags: latest (newest release), 0.2.0 (a fixed release), edge (current main),
-    #       and the same with -sleepecg for the optional ML engine (Intel only, ~600 MB larger).
+    # Tags: latest (newest release), 0.2.0 (a fixed release), edge (current main).
     image: ghcr.io/vrouleau/cpap-sleep-stager:latest
     # To build from this checkout instead: docker compose up -d --build
     build:
       context: .
-      args:
-        WITH_SLEEPECG: "false"   # "true" adds the sleepecg ML engine (~600 MB larger image)
     container_name: sleep-stager
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       TZ: America/Toronto
+      # Optional sleepecg ML engine (included in the image): "true" offers it and makes
+      # it the default for new imports; "false" uses the heuristic engine only.
+      SLEEPECG: "false"
       # DATABASE_URL: postgresql+psycopg://sleep:sleep@db/sleep   # optional; SQLite by default
     volumes:
       - ./data:/data   # sleep.db + original uploads (kept so nights can be re-analysed)

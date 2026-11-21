@@ -17,7 +17,7 @@ Self-hosted web app that turns a **ResMed CPAP SD card** and/or a **Wellue O2Rin
 
 ## Run it
 
-Prebuilt images are published to the GitHub container registry for Intel/AMD and ARM, so a NAS or home server does not have to build anything. You only need [`docker-compose.yml`](docker-compose.yml):
+Prebuilt images are published to the GitHub container registry for Intel/AMD (linux/amd64), so a NAS or home server does not have to build anything. You only need [`docker-compose.yml`](docker-compose.yml):
 
 ```bash
 mkdir sleep-stager && cd sleep-stager
@@ -33,7 +33,6 @@ Set `TZ` in `docker-compose.yml` to your time zone. Update the same way (`docker
 | `latest` | the newest release (recommended) |
 | `0.2.0`, `0.2` | a fixed release, to stay on or roll back to |
 | `edge` | the current `main` branch |
-| `…-sleepecg` | any of the above with the optional sleepecg engine (Intel/AMD only, ~600 MB larger) |
 
 **The app has no login.** Keep it on your LAN, or put it behind a reverse proxy with authentication: it holds health data.
 
@@ -134,7 +133,7 @@ All thresholds are relative to the night itself (robust z-scores), so the rules 
 
 ### Optional: `sleepecg` engine
 
-[`sleepecg`](https://github.com/cbrnr/sleepecg)'s `wrn-gru-mesa` model (wake/REM/NREM) can serve as a prior. The respiratory and motion evidence is then fused on top. The catch is that sleepecg was trained on ECG R-peaks, and the O2Ring only exports a smoothed pulse rate. Here beat times are rebuilt by integrating that pulse rate, which keeps heart-rate level and slow variability but loses true beat-to-beat HRV. Treat it as an experiment and compare it against the heuristic on your own nights. Use a `-sleepecg` image tag (or build with `WITH_SLEEPECG=true`). Age and sex are model inputs, and you can set them on upload.
+[`sleepecg`](https://github.com/cbrnr/sleepecg)'s `wrn-gru-mesa` model (wake/REM/NREM) can serve as a prior. The respiratory and motion evidence is then fused on top. The catch is that sleepecg was trained on ECG R-peaks, and the O2Ring only exports a smoothed pulse rate. Here beat times are rebuilt by integrating that pulse rate, which keeps heart-rate level and slow variability but loses true beat-to-beat HRV. Treat it as an experiment and compare it against the heuristic on your own nights. It's included in the image. To use it, set `SLEEPECG: "true"` under `environment:` in `docker-compose.yml` and restart. It then appears in the engine picker, and new imports use it by default. You can still pick the heuristic per import, and re-run any night with either engine. `"false"` (the default) hides it. `GET /api/health` reports `sleepecg_status`. To build a slimmer image without it, use `docker compose build --build-arg WITH_SLEEPECG=false`. Age and sex are model inputs, and you can set them on upload.
 
 ## API
 
