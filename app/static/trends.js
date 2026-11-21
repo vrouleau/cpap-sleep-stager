@@ -90,6 +90,11 @@
     wake: n => clockMin(n.s.final_wake),
     hr: n => num(n.s.hr_sleep_mean),
     arousal_idx: n => (n.ring ? num(n.s.arousal_index) : null),
+    // arousals per hour asleep by likely cause (nights analysed since causes exist)
+    ar_respiratory: n => (n.ring && n.s.arousal_index_by_cause ? num(n.s.arousal_index_by_cause.respiratory) : null),
+    ar_desaturation: n => (n.ring && n.s.arousal_index_by_cause ? num(n.s.arousal_index_by_cause.desaturation) : null),
+    ar_movement: n => (n.ring && n.s.arousal_index_by_cause ? num(n.s.arousal_index_by_cause.movement) : null),
+    ar_spontaneous: n => (n.ring && n.s.arousal_index_by_cause ? num(n.s.arousal_index_by_cause.spontaneous) : null),
     deep_pct: n => num(n.s.deep_pct_tst),
     rem_pct: n => num(n.s.rem_pct_tst),
     ahi: n => (n.cpap ? num(n.s.ahi_sleep) : null),
@@ -296,6 +301,12 @@
     { key: 'rem', label: 'REM', color: css('--rem') },
     { key: 'awake', label: 'Awake', color: css('--awake') },
   ];
+  const AROUSAL_CAUSES = () => [
+    { key: 'ar_respiratory', label: 'After a CPAP event', color: css('--ar-respiratory') },
+    { key: 'ar_desaturation', label: 'After an O₂ dip', color: css('--ar-desaturation') },
+    { key: 'ar_movement', label: 'With movement', color: css('--ar-movement') },
+    { key: 'ar_spontaneous', label: 'No obvious cause', color: css('--ar-spontaneous') },
+  ];
   const EVENTS = () => [
     { key: 'oa', label: 'Obstructive', color: css('--ev-oa') },
     { key: 'ca', label: 'Central', color: css('--ev-ca') },
@@ -363,6 +374,12 @@
       tile('Deep (est.)', fmtOr(deepAvg, F.pct.v), ring.length ? 'of sleep, O2Ring nights' : 'needs the O2Ring'),
       tile('Arousals', fmtOr(avgOf(ring, 'arousal_idx'), v => `${v.toFixed(1)} / h`), ring.length ? 'brief, still asleep · O2Ring nights' : 'needs the O2Ring'),
     ];
+    const caused = ring.filter(n => n.s.arousal_index_by_cause);
+    if (caused.length) {
+      const resp = avgOf(caused, 'ar_respiratory'), tot = avgOf(caused, 'arousal_idx');
+      tiles.push(tile('Arousals after CPAP events', fmtOr(resp, v => `${v.toFixed(1)} / h`),
+        tot ? `${Math.round(100 * resp / tot)}% of arousals` : ''));
+    }
     const cards = [
       card('Sleep stages', 'Hours per night. Deep sleep is an estimate and needs the O2Ring.', stages,
         p => bars(p, bks, stages, F.hours, { totalLabel: 'In bed' })),
@@ -373,10 +390,16 @@
       card('Awake after falling asleep', 'Minutes awake between falling asleep and the final awakening.', null,
         p => bars(p, bks, [{ key: 'waso', label: 'awake', color: css('--awake') }], F.min)),
     ];
+    if (caused.length) {
+      const causes = AROUSAL_CAUSES();
+      cards.push(card('Arousals by likely cause',
+        'Brief arousals per hour asleep (pulse surges and short wake marks, still asleep). Mostly "after a CPAP event" points at pressure or mask; mostly "no obvious cause" points elsewhere.',
+        causes, p => bars(p, bks, causes, F.rate, { totalLabel: 'All arousals', min: 1 })));
+    }
     if (ring.length) cards.push(card('Pulse while asleep', 'Average pulse during sleep (O2Ring nights).', null,
       p => line(p, bks, { key: 'hr', label: 'pulse', color: css('--line1') }, F.bpm, { minSpan: 4 })));
     const cols = [['Asleep', cell('tst', hours)], ['Efficiency', cell('eff', F.pct.v)], ['Awake (WASO)', cell('waso', F.min.v)],
-      ['Light', cell('light', hours)], ['Deep', cell('deep', hours)], ['REM', cell('rem', hours)], ['Arousals / h', cell('arousal_idx', v => v.toFixed(1))], ['Pulse', cell('hr', F.bpm.v)]];
+      ['Light', cell('light', hours)], ['Deep', cell('deep', hours)], ['REM', cell('rem', hours)], ['Arousals / h', cell('arousal_idx', v => v.toFixed(1))], ['after CPAP', cell('ar_respiratory', v => v.toFixed(1))], ['Pulse', cell('hr', F.bpm.v)]];
     return { tiles, cards, cols };
   }
 

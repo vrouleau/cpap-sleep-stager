@@ -59,7 +59,7 @@ The timeline stacks the stages (with *Deep* as its own row on O2Ring nights) ove
 
 * ResMed events as full-height lines, coloured by type, with a toggle;
 * mask-off periods as grey bands;
-* brief arousals as ticks along the Awake row;
+* brief arousals as triangles along the Awake row, coloured by likely cause;
 * SpO₂ drops of 4% or more along the SpO₂ panel.
 
 Below the timeline are tiles (time asleep, awake, NREM/REM/deep, REM latency, AHI, ODI, pulse, breathing rate), the CPAP clock check (see below), a stage-by-stage table, the ResMed event list and a *Re-run* form. *Epochs CSV* and *JSON* export everything.
@@ -120,7 +120,11 @@ For each 30-second epoch it computes features over a 2-minute window, then stage
 * **NREM**: metronomic breathing, low and steady pulse, no movement.
 * **REM**: irregular breathing (rate *and* depth), more variable pulse, but no movement (atonia). It is suppressed in the first 45 min after sleep onset.
 * **Awake**: seeded by movement that means waking (the pulse jumps 5+ bpm, the movement is big, or it lasts more than one epoch; a lone twitch or small position change is not wake) or by mask removal. It is then grown into neighbouring epochs whose pulse is above an **adaptive cut**, between *this night's* NREM pulse and its movement-confirmed wake pulse. Stretches of 4 minutes or more above the cut count as awake even without movement (lying awake quietly).
-* **Arousals**: inside sleep, a wake mark of 1 minute or less stays awake only with both a pulse jump of 8+ bpm and movement. Otherwise it is an *arousal*: you stay asleep, and it is counted per hour.
+* **Arousals** (O2Ring nights), counted per hour asleep. They come from two sources:
+  * *Brief wake marks:* inside sleep, a wake mark of 1 minute or less stays awake only with both a pulse jump of 8+ bpm and movement. Otherwise it is an arousal and you stay asleep.
+  * *Pulse surges inside sleep:* most arousals last 3–15 s and never turn a 30-s epoch into a wake mark. The app finds them on the 1-second pulse trace: a jump of 7+ bpm over the previous minute, at least 3× the pulse's normal wobble over the last 5 min (REM needs a bigger jump), peaking within 10 s.
+
+  Each arousal gets a **likely cause**: *after a CPAP event* (a ResMed apnea, hypopnea or RERA ended just before it), *after an O₂ dip* (a ≥4% desaturation with no scored CPAP event), *with movement*, or *no obvious cause*. The Sleep trends page charts arousals per hour by cause. Mostly "after a CPAP event" points at pressure or mask. Mostly "no obvious cause" points elsewhere: pain, bladder, temperature, alcohol, noise. Pulse surges are a recognised stand-in for EEG arousals, not the same thing. On simulated nights about 80–90% are found, with about 10% over-counting. Nights analysed before this change need *Re-run* to get causes.
 
 All thresholds are relative to the night itself (robust z-scores), so the rules adapt to you. It also works with only one source, though less accurately: CPAP-only cannot really separate quiet wake from REM, and O2Ring-only has no breathing data.
 
@@ -171,6 +175,7 @@ app/
   ingest/o2ring.py            O2Ring CSV (o2ring-analyzer) and raw-recording decoder
   staging/features.py         breath detection + per-epoch features
   staging/engine.py           heuristic staging: wake, REM, deep, arousals (+ ML-prior fusion)
+  staging/arousal.py          pulse-surge arousals + likely-cause tagging
   staging/sleepecg_engine.py  optional sleepecg prior
   staging/sync.py             CPAP vs O2Ring clock-offset detection (DST, drift, travel)
   pipeline.py                 upload → nights → analysis → summary → DB

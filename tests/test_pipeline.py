@@ -91,7 +91,12 @@ def test_api_roundtrip(demo_dir):
         assert c.get("/").status_code == 200
         rep = c.get("/reports")
         assert rep.status_code == 200 and "Download PDF" in rep.text and 'id="nights-data"' in rep.text
-        assert c.get(f"/nights/{nid}").status_code == 200
+        page = c.get(f"/nights/{nid}").text
+        assert "after CPAP events" in page and 'id="toggle-arousals"' in page
+        assert any(e["source"] == "arousal" and e["kind"].startswith("Arousal (")
+                   for e in d["events"])
+        tr = c.get("/")  # Sleep trends page embeds each night's summary
+        assert tr.status_code == 200 and "arousal_index_by_cause" in tr.text
         csv = c.get(f"/api/nights/{nid}/epochs.csv").text
         assert csv.startswith("time,stage")
         segs = c.get(f"/api/nights/{nid}/segments").json()

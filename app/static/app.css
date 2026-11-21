@@ -120,6 +120,17 @@ form.inline label { display: flex; flex-direction: column; font-size: .82rem; co
 .maskoff:hover rect { opacity: .28; }
 .sw.maskoff { background: var(--muted); opacity: .4; }
 svg .arousaltick { fill: var(--awake); opacity: .55; }
+/* arousal causes: CPAP event (red), O2 dip (SpO2 teal), movement (amber), none (grey) */
+:root { --ar-respiratory: var(--ev-oa); --ar-desaturation: var(--line2);
+  --ar-movement: var(--ev-ua); --ar-spontaneous: var(--ev-other); }
+svg .arlayer.hidden { display: none; }
+svg .ar.a-respiratory { fill: var(--ar-respiratory); } svg .ar.a-desaturation { fill: var(--ar-desaturation); }
+svg .ar.a-movement { fill: var(--ar-movement); } svg .ar.a-spontaneous { fill: var(--ar-spontaneous); }
+.tri { width: 0; height: 0; display: inline-block; vertical-align: middle; margin-left: .5rem;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 8px solid var(--ar-spontaneous); }
+.tri.a-respiratory { border-top-color: var(--ar-respiratory); } .tri.a-desaturation { border-top-color: var(--ar-desaturation); }
+.tri.a-movement { border-top-color: var(--ar-movement); }
+.ar-break { display: block; font-size: .78rem; color: var(--muted); margin-top: .15rem; }
 .sw.arousal { background: var(--awake); opacity: .55; width: 4px; }
 
 /* ---------- app shell: sidebar navigation (top strip on narrow screens) ---------- */
