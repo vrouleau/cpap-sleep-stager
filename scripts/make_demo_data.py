@@ -6,7 +6,7 @@
 
 Writes ``<out>/DATALOG/YYYYMMDD/*_BRP.edf``, ``*_EVE.edf`` and ``<out>/O2Ring_*.csv``,
 plus ``truth_*.csv`` with the stage sequence the data was generated from and
-``truth_arousals_*.csv`` with the simulated arousals (CPAP clock).
+``truth-arousals_*.csv`` with the simulated arousals (CPAP clock).
 """
 
 from __future__ import annotations
@@ -179,7 +179,7 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
     lab = {"W": "Awake", "N": "NREM", "R": "REM"}
     (out / f"truth_{day}.csv").write_text(
         "t,stage\n" + "\n".join(f"{t.isoformat()},{lab[s]}" for t, s in zip(times, stages)))
-    (out / f"truth_arousals_{day}.csv").write_text(
+    (out / f"truth-arousals_{day}.csv").write_text(
         "t,cause\n" + "\n".join(f"{(evening + timedelta(seconds=a)).isoformat(timespec='seconds')},{c}"
                                   for a, c, _ in arousals))
 

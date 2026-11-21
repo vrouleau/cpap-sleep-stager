@@ -20,7 +20,8 @@ def _files(d: Path, kind=None):
 
 def _accuracy(demo_dir, paths):
     r = analyze(paths, ProcessOptions())
-    truth = pd.read_csv(next(demo_dir.glob("truth_*.csv")), parse_dates=["t"])
+    (truth_csv,) = demo_dir.glob("truth_*.csv")  # exactly one stage answer key
+    truth = pd.read_csv(truth_csv, parse_dates=["t"])
     m = r["epochs"].merge(truth, on="t", suffixes=("", "_true"))
     return (m.stage == m.stage_true).mean(), r
 

@@ -18,7 +18,7 @@ def _secs(ts) -> np.ndarray:
 
 
 def _truth(d: Path):
-    t = pd.read_csv(next(d.glob("truth_arousals_*.csv")))
+    t = pd.read_csv(next(d.glob("truth-arousals_*.csv")))
     return _secs(t["t"]), t["cause"].to_numpy()
 
 
