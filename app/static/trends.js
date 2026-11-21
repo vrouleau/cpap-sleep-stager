@@ -351,9 +351,12 @@
       ['Minutes awake, 2–5 am', g => one(perNight(g.nights, n => n.s.wake_2to5_min), 0)],
       ['Minutes awake after sleep onset', g => one(perNight(g.nights, n => n.s.waso_min), 0)],
       ['Final awakening (median)', g => clock(finalMin(g.nights))],
-      ['Onset: gradual pulse climb', g => { const w = sum(g.nights, 'wakeups_gradual') + sum(g.nights, 'wakeups_abrupt') + sum(g.nights, 'wakeups_quiet'); return pct(sum(g.nights, 'wakeups_gradual'), w); }],
-      ['Onset: abrupt jump', g => { const w = sum(g.nights, 'wakeups_gradual') + sum(g.nights, 'wakeups_abrupt') + sum(g.nights, 'wakeups_quiet'); return pct(sum(g.nights, 'wakeups_abrupt'), w); }],
-      ['Onset: no clear change', g => { const w = sum(g.nights, 'wakeups_gradual') + sum(g.nights, 'wakeups_abrupt') + sum(g.nights, 'wakeups_quiet'); return pct(sum(g.nights, 'wakeups_quiet'), w); }],
+      ['Pulse built up beforehand', g => { const w = ['gradual', 'none', 'abrupt', 'quiet'].reduce((a, k) => a + sum(g.nights, `wakeups_${k}`), 0); return pct(sum(g.nights, 'wakeups_gradual'), w); }],
+      ['Something just before', g => pct(sum(g.nights, 'wakeups_triggered'), sum(g.nights, 'wakeups_night'))],
+      ['…machine raised the pressure', g => pct(sum(g.nights, 'wakeups_before_pressure_rise'), sum(g.nights, 'wakeups_night'))],
+      ['…large leak', g => pct(sum(g.nights, 'wakeups_before_leak'), sum(g.nights, 'wakeups_night'))],
+      ['…flow limitation or snoring', g => pct(g.nights.reduce((a, n) => a + Math.max(n.s.wakeups_before_flow_limitation || 0, n.s.wakeups_before_snoring || 0), 0), sum(g.nights, 'wakeups_night'))],
+      ['…CPAP event, O₂ dip or movement', g => pct(g.nights.reduce((a, n) => a + Math.max(n.s.wakeups_before_cpap_event || 0, n.s.wakeups_before_o2_dip || 0, n.s.wakeups_before_movement || 0), 0), sum(g.nights, 'wakeups_night'))],
       ['Brief wakes (1–5 min)', g => one(perNight(g.nights, n => n.s.brief_wakes))],
       ['Woke out of / right after REM', g => pct(sum(g.nights, 'wakeups_from_rem'), sum(g.nights, 'wakeups_night'))],
       ['Pulse still up 2–5 min into it', g => pct(sum(g.nights, 'wakeups_alert'), sum(g.nights, 'wakeups_night'))],
@@ -466,7 +469,7 @@
         'Minutes awake after first falling asleep, per clock hour, averaged per night.' + note,
         groups, p => hourBars(p, groups)));
       cards.push(card('Wake-ups compared',
-        'Per night. Onset shape is read from the O2Ring pulse, relative to the normal for each stage: gradual = pulse climbing for 30–60 min before (a slow internal build-up such as the body clock, a filling bladder or low blood sugar; it does not measure cortisol), abrupt = flat then a jump at waking (something woke you).',
+        'Per night, awakenings of 5 min or more. "Built up": the O2Ring pulse had been climbing for 30–60 min before (a slow internal build-up such as the body clock, a filling bladder or low blood sugar; it does not measure cortisol). "Just before": CPAP events, O₂ dips, movement (2 min), and from the machine data around waking: pressure rise, flow limitation, snoring, large leak. Machine rows need the PLD files (re-import the SD card).',
         null, p => wakeTable(p, groups)));
     }
     const cols = [['Asleep', cell('tst', hours)], ['Efficiency', cell('eff', F.pct.v)], ['Awake (WASO)', cell('waso', F.min.v)],

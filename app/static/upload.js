@@ -39,9 +39,9 @@
 
   async function classify(file) {
     const name = file.name;
-    let m = name.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})\d{4}_(BRP|EVE)\.edf$/i);
+    let m = name.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})\d{4}_(BRP|EVE|PLD)\.edf$/i);
     if (m) return { kind: m[5].toUpperCase(), night: nightOf(m[1], m[2], m[3], m[4]) };
-    if (/\.edf$/i.test(name)) return { kind: 'ignored' };  // STR, PLD, SAD, CSL, ...
+    if (/\.edf$/i.test(name)) return { kind: 'ignored' };  // STR, SAD, CSL, ...
     if (/\.zip$/i.test(name)) return { kind: 'zip' };
     if (/\.(csv|txt)$/i.test(name)) return { kind: 'csv' };
     m = name.match(/^(\d{4})(\d{2})(\d{2})(\d{2})\d{4}$/);
@@ -119,6 +119,7 @@
     summary.innerHTML = `<ul class="found">
       ${row(n('BRP'), `<b>${n('BRP')}</b> CPAP flow sessions (<code>*_BRP.edf</code>)`)}
       ${row(n('EVE'), `<b>${n('EVE')}</b> CPAP event files (<code>*_EVE.edf</code>)`)}
+      ${row(n('PLD'), `<b>${n('PLD')}</b> CPAP machine-data files: pressure, leak, flow limitation (<code>*_PLD.edf</code>)`)}
       ${row(n('ring') + n('csv'), `<b>${n('ring')}</b> O2Ring recordings${n('csv') ? ` + <b>${n('csv')}</b> CSV exports` : ''}`)}
       ${n('zip') ? row(true, `<b>${n('zip')}</b> zip file${n('zip') > 1 ? 's' : ''} (unpacked on the server)`) : ''}
       ${row(nights.length, `<b>${nights.length}</b> night${nights.length === 1 ? '' : 's'} ${range(nights)}`)}
@@ -127,7 +128,7 @@
     ${grow.length && !replace() ? `<p class="muted small">${grow.length} already-imported night${grow.length === 1 ? '' : 's'} get${grow.length === 1 ? 's' : ''} new files and will be re-analysed: ${range(grow)}.</p>` : ''}
     ${done.length && !replace() ? `<p class="muted small">${done.length} night${done.length === 1 ? ' is' : 's are'} already fully imported and will be skipped. Tick <i>Replace nights that already exist</i> in Options to re-import ${done.length === 1 ? 'it' : 'them'}.</p>` : ''}
     ${fresh.length && old.length ? `<p class="muted small">New: ${range(fresh)}</p>` : ''}
-    <p class="muted small">${n('ignored')} other file${n('ignored') === 1 ? '' : 's'} not needed (settings, STR.edf, PLD/SAD/CSL, …).
+    <p class="muted small">${n('ignored')} other file${n('ignored') === 1 ? '' : 's'} not needed (settings, STR.edf, SAD/CSL, …).
       To upload: ${send.length} file${send.length === 1 ? '' : 's'}, ${fmtMB(send.reduce((a, f) => a + f.file.size, 0))}.</p>`;
     go.disabled = !send.length;
     go.textContent = send.length ? `Upload & analyse` : (usable().length ? 'Nothing new to upload' : 'No usable files');

@@ -10,6 +10,16 @@ def _files(d: Path):
     return [p for p in d.rglob("*") if p.is_file() and not p.name.startswith("truth")]
 
 
+def _near(w, t, tol=600):
+    """The true wake-up falls inside the awakening, or within 10 min of its start (or of
+    the pulse-located moment of waking)."""
+    start = pd.Timestamp(w["t"])
+    if start <= t <= start + pd.Timedelta(minutes=w["minutes"]):
+        return True
+    times = [w["t"]] + ([w["woke_at"]] if w.get("woke_at") else [])
+    return any(abs((pd.Timestamp(x) - t).total_seconds()) <= tol for x in times)
+
+
 def _night(demo_dir, ring=True, cpap=True):
     fs = [p for p in _files(demo_dir) if (ring or p.suffix != ".csv") and (cpap or p.suffix != ".edf")]
     return analyze(fs, ProcessOptions())
@@ -22,17 +32,17 @@ def test_finds_wakeups_and_how_they_started(demo_dir):
     assert len(truth) >= 2
     right = 0
     for _, row in truth.iterrows():
-        m = [w for w in night if abs((pd.Timestamp(w["t"]) - row.t).total_seconds()) <= 600]
+        m = [w for w in night if _near(w, row.t)]
         assert m, f"missed the wake-up at {row.t}"
-        right += m[0]["onset"] == row.onset
-    assert right >= len(truth) - 1  # gradual vs abrupt, at most one wrong on this night
+        right += (m[0]["onset"] == "gradual") == (row.onset == "gradual")
+    assert right >= len(truth) - 1  # build-up or not, at most one wrong on this night
     assert [w for w in r["wakeups"] if w["kind"] == "final"]
 
 
 def test_wakeup_fields(demo_dir):
     r = _night(demo_dir)
     for w in r["wakeups"]:
-        assert w["onset"] in ("gradual", "abrupt", "quiet")
+        assert w["onset"] in ("gradual", "none")
         assert w["stage_before"] in ("NREM", "REM", None)
         assert isinstance(w["before"], list) and isinstance(w["alert"], bool)
         if w["kind"] == "night":
@@ -53,7 +63,7 @@ def test_night_summary_by_hour(demo_dir):
     r = _night(demo_dir)
     s = awakenings.summarize(r["epochs"], r["wakeups"])
     assert s["wakeups_night"] == len([w for w in r["wakeups"] if w["kind"] == "night"])
-    assert s["wakeups_gradual"] + s["wakeups_abrupt"] + s["wakeups_quiet"] == s["wakeups_night"]
+    assert s["wakeups_gradual"] + s["wakeups_none"] == s["wakeups_night"]
     assert sum(s["wake_by_hour"].values()) > 0 and all(len(h) == 2 for h in s["wake_by_hour"])
     assert all(isinstance(w["t"], str) for w in s["wakeups"])
 
@@ -81,7 +91,7 @@ def test_reanalyse_all_nights(demo_dir):
         st = c.get("/api/reprocess-all").json()
         assert st["done"] == st["total"] >= 1 and not st["errors"] and not st["running"]
         page = c.get(f"/nights/{nid}").text
-        assert "Wake-ups" in page and "How it started" in page
+        assert "Wake-ups" in page and "Pulse before" in page
         assert "Re-analyse all nights" in c.get("/nights").text
         assert "wake_by_hour" in c.get("/").text
         c.delete(f"/api/nights/{nid}")
@@ -114,3 +124,33 @@ def test_bathroom_timing():
     (w,) = [w for w in awakenings.detect(_epochs(st, flow), None, []) if w["kind"] == "night"]
     assert w["mask_off"] is True
     assert w["mask_off_after_min"] == 6.0 and w["back_on_awake_min"] == 10.0
+
+
+def test_machine_data_before_wakeups(demo_dir):
+    """The demo machine raises the pressure (flow limitation first) in the minutes before
+    ~40% of wake-ups, and once with no wake-up at all."""
+    r = _night(demo_dir)
+    ep = r["epochs"]
+    assert ep["pressure"].between(7.5, 11.5).mean() > 0.9 and ep["leak"].max() > 24
+    truth = pd.read_csv(next(demo_dir.glob("truth-wakeups_*.csv")), parse_dates=["t"])
+    night = [w for w in r["wakeups"] if w["kind"] == "night"]
+    for _, row in truth.iterrows():
+        (w,) = [w for w in night if _near(w, row.t)][:1]
+        assert ("pressure rise" in w["before"]) == bool(row.pressure_first), (row.t, w["before"])
+        if row.pressure_first:
+            assert "flow limitation" in w["before"] and w["pressure_rise"] >= 2.0
+
+
+def test_pld_reader_units_and_names(demo_dir):
+    from app.ingest.resmed import read_pld
+    q = read_pld(sorted(demo_dir.rglob("*_PLD.edf"))[0])
+    assert set(q.channels) == {"pressure", "leak", "flow_lim", "snore"}
+    assert q.fs == 0.5 and 7.9 < q.channels["pressure"].min() < 8.1  # Press.2s, not mask/EPR
+    assert q.channels["leak"].max() > 20  # L/s converted to L/min
+
+
+def test_pld_kept_on_upload(tmp_path):
+    from app.pipeline import extract_upload
+    names = ["20261101_225000_BRP.edf", "20261101_225000_PLD.edf", "20261101_225000_SAD.edf"]
+    kept = extract_upload([(n, b"x") for n in names], tmp_path / "w")
+    assert sorted(p.name for p in kept) == names[:2]
