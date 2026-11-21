@@ -13,8 +13,8 @@ services:
       - "8000:8000"
     environment:
       TZ: America/Toronto
-      # Optional sleepecg ML engine: "true" installs it into ./data on first start
-      # (~600 MB download, a few minutes, in the background); restarts reuse it.
+      # Optional sleepecg ML engine (included in the image): "true" offers it and makes
+      # it the default for new imports; "false" uses the heuristic engine only.
       SLEEPECG: "false"
       # DATABASE_URL: postgresql+psycopg://sleep:sleep@db/sleep   # optional; SQLite by default
     volumes:

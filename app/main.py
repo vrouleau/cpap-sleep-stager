@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app import pipeline
-from app.db import DATA_DIR, EPOCH_FIELDS, Night, SessionLocal, init_db
+from app.db import EPOCH_FIELDS, Night, SessionLocal, init_db
 from app.staging import sleepecg_engine
 from app.staging.features import EPOCH_S
 
@@ -27,8 +27,8 @@ BASE = Path(__file__).parent
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
-    # SLEEPECG=true: install the optional engine into the data volume (background)
-    sleepecg_engine.bootstrap(DATA_DIR)
+    # SLEEPECG=true: the optional engine (baked into the image) is used; load it once
+    sleepecg_engine.bootstrap()
     yield
 
 
@@ -225,6 +225,8 @@ async def _ingest(files: list[UploadFile], opts: pipeline.ProcessOptions, replac
 
 def _opts(engine: str, offset: float, dayfirst: bool, age: str | None, gender: str | None,
           auto_sync: bool = False):
+    if engine not in ("heuristic", "sleepecg"):  # not chosen: follow the SLEEPECG switch
+        engine = sleepecg_engine.default_engine()
     return pipeline.ProcessOptions(
         engine=engine, cpap_offset_s=offset, dayfirst=dayfirst, auto_sync=auto_sync,
         age=int(age) if age else None, gender=gender or None)
@@ -315,7 +317,7 @@ def import_page(request: Request, imported: int | None = None):
 
 
 @app.post("/upload")
-async def upload_form(files: list[UploadFile] = File(...), engine: str = Form("heuristic"),
+async def upload_form(files: list[UploadFile] = File(...), engine: str = Form("auto"),
                       offset: float = Form(0.0), dayfirst: bool = Form(False),
                       replace: bool = Form(False), age: str | None = Form(None),
                       gender: str | None = Form(None), notes: str | None = Form(None),
@@ -395,7 +397,7 @@ def api_nights():
 
 
 @app.post("/api/nights")
-async def api_upload(files: list[UploadFile] = File(...), engine: str = Form("heuristic"),
+async def api_upload(files: list[UploadFile] = File(...), engine: str = Form("auto"),
                      offset: float = Form(0.0), dayfirst: bool = Form(False),
                      replace: bool = Form(True), age: str | None = Form(None),
                      gender: str | None = Form(None), auto_sync: bool = Form(False),

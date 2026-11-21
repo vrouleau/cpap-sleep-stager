@@ -168,7 +168,7 @@
       <label>Engine
         <select name="engine">
           <option value="heuristic" {% if n.engine == 'heuristic' %}selected{% endif %}>Heuristic</option>
-          <option value="sleepecg" {% if not sleepecg %}disabled{% endif %} {% if 'sleepecg' in n.engine %}selected{% endif %}>sleepecg + resp{% if not sleepecg %} ({{ {'installing': 'installing…', 'failed': 'install failed, see logs'}.get(sleepecg_status.status, 'off: set SLEEPECG=true') if sleepecg_status is defined else 'not installed' }}){% endif %}</option>
+          <option value="sleepecg" {% if not sleepecg %}disabled{% endif %} {% if 'sleepecg' in n.engine %}selected{% endif %}>sleepecg + resp{% if not sleepecg %} ({{ 'not in this image' if sleepecg_status is defined and sleepecg_status.status == 'missing' else 'off: set SLEEPECG=true' }}){% endif %}</option>
         </select></label>
       <label>CPAP clock correction (s) <input type="number" name="offset" value="{{ n.cpap_offset_s|int }}"
              title="Added to ResMed timestamps. -3600 = machine still on summer time"></label>

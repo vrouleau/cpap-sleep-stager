@@ -2,7 +2,8 @@ name: Images
 
 # main      -> ghcr.io/<repo>:edge
 # tag vX.Y.Z -> :X.Y.Z, :X.Y, :latest + a GitHub Release
-# (the optional sleepecg engine is a runtime switch, SLEEPECG=true, not an image variant)
+# One image for Intel and ARM with the optional sleepecg engine baked in; using it is
+# the runtime switch SLEEPECG=true (no separate -sleepecg images any more).
 on:
   push:
     branches: [main]
@@ -32,7 +33,7 @@ jobs:
         include:
           - variant: standard
             suffix: ""
-            sleepecg: "false"
+            sleepecg: "true"  # baked in; switched on at runtime with SLEEPECG=true
             platforms: linux/amd64,linux/arm64  # Intel and ARM NAS models
     steps:
       - uses: actions/checkout@v4
@@ -84,4 +85,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "$GITHUB_REF_NAME" --generate-notes \
-            --notes "Docker image: \`$IMAGE:${GITHUB_REF_NAME#v}\` (or \`:latest\`). Optional sleepecg engine: set \`SLEEPECG=true\`."
+            --notes "Docker image: \`$IMAGE:${GITHUB_REF_NAME#v}\` (or \`:latest\`). The optional sleepecg engine is included; turn it on with \`SLEEPECG=true\`."

@@ -1,8 +1,9 @@
 FROM python:3.12-slim
 
-# sleepecg is normally switched on at runtime (SLEEPECG=true installs it into /data on
-# first start). WITH_SLEEPECG=true bakes it into the image instead, e.g. for offline use.
-ARG WITH_SLEEPECG=false
+# The optional sleepecg engine (keras + jax, ~400 MB) is baked in; whether the app
+# uses it is the runtime switch SLEEPECG=true/false. WITH_SLEEPECG=false builds a
+# slimmer image without it.
+ARG WITH_SLEEPECG=true
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     DATA_DIR=/data KERAS_BACKEND=jax PIP_NO_CACHE_DIR=1
 
@@ -11,7 +12,7 @@ COPY requirements.txt requirements-sleepecg.txt ./
 RUN pip install -r requirements.txt \
  && if [ "$WITH_SLEEPECG" = "true" ]; then \
       pip install -r requirements-sleepecg.txt \
-      && python -c "import sleepecg, warnings; warnings.simplefilter('ignore'); sleepecg.load_classifier('wrn-gru-mesa', 'SleepECG')"; \
+      && python -c "import sleepecg, importlib.util as u; assert u.find_spec('keras') and u.find_spec('jax')"; \
     fi
 
 COPY app ./app
