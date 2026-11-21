@@ -6,7 +6,8 @@
 
 Writes ``<out>/DATALOG/YYYYMMDD/*_BRP.edf``, ``*_EVE.edf`` and ``<out>/O2Ring_*.csv``,
 plus ``truth_*.csv`` with the stage sequence the data was generated from and
-``truth-arousals_*.csv`` with the simulated arousals (CPAP clock).
+``truth-arousals_*.csv`` / ``truth-wakeups_*.csv`` with the simulated arousals and
+wake-ups (gradual vs abrupt pulse onset), on the CPAP clock.
 """
 
 from __future__ import annotations
@@ -147,6 +148,23 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
             arousals.append((t, "spontaneous", bool(rng.random() < 0.3)))
     arousals.sort()
     surge_amp = {a: float(rng.uniform(10, 16)) for a, _, _ in arousals}
+    # Wake-ups in the night: about half are preceded by a slow pulse climb over 40 min
+    # ("gradual", body-clock-like); the others start from a flat pulse ("abrupt").
+    wakeups = []
+    first_sleep = int(np.argmax(stages != "W"))
+    last_sleep = int(len(stages) - 1 - np.argmax(stages[::-1] != "W"))
+    i = first_sleep
+    while i <= last_sleep:
+        if stages[i] == "W":
+            j = i
+            while j <= last_sleep and stages[j] == "W":
+                j += 1
+            on = i * EPOCH
+            if j - i >= 2 and all(abs(on - m) > 900 for m in markers):
+                wakeups.append((on, "gradual" if rng.random() < 0.5 else "abrupt"))
+            i = j
+        else:
+            i += 1
     for k in range(int((n * EPOCH + 240) / 4)):
         ts = ring0 + timedelta(seconds=4 * k)
         tt = (ts - evening).total_seconds()
@@ -158,6 +176,9 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
         for et, d in ev_all:
             if et + d + 15 < tt < et + d + 45:  # finger nadir ~30 s after event end
                 spo2 -= 4.5
+        for on, kind in wakeups:  # slow climb to +7 bpm over the 40 min before waking
+            if kind == "gradual" and on - 2400 <= tt < on:
+                hr += 7.0 * (tt - (on - 2400)) / 2400
         for a, _, _ in arousals:  # pulse surge: ~5 s rise, ~12 s recovery
             if a <= tt < a + 17:
                 x = tt - a
@@ -179,6 +200,9 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
     lab = {"W": "Awake", "N": "NREM", "R": "REM"}
     (out / f"truth_{day}.csv").write_text(
         "t,stage\n" + "\n".join(f"{t.isoformat()},{lab[s]}" for t, s in zip(times, stages)))
+    (out / f"truth-wakeups_{day}.csv").write_text(
+        "t,onset\n" + "\n".join(f"{(evening + timedelta(seconds=on)).isoformat(timespec='seconds')},{k}"
+                                  for on, k in wakeups))
     (out / f"truth-arousals_{day}.csv").write_text(
         "t,cause\n" + "\n".join(f"{(evening + timedelta(seconds=a)).isoformat(timespec='seconds')},{c}"
                                   for a, c, _ in arousals))

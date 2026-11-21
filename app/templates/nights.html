@@ -10,6 +10,22 @@
 <header class="pagehead"><div><h1>Nights</h1>
   <p class="muted">{% if total %}{{ first }}–{{ last }} of {{ total }} nights, newest first. Open one for its timeline.{% endif %}</p></div>
   {{ pager_nav() }}</header>
+{% if total %}
+<section class="card reanalyse">
+  {% if reprocess.running %}
+    <meta http-equiv="refresh" content="5">
+    <p><b>Re-analysing all nights… {{ reprocess.done }} / {{ reprocess.total }}</b>
+      <span class="muted">This page refreshes by itself.</span></p>
+  {% else %}
+    <form method="post" action="/nights/reprocess-all" class="inline-form">
+      <button type="submit">Re-analyse all nights</button>
+      <label class="chk"><input type="checkbox" name="dayfirst" value="true"> O2Ring CSVs use DD/MM dates</label>
+      <span class="muted small">Brings every night up to date with the current analysis (e.g. arousal causes, wake-up analysis), each with its own engine and clock correction. Takes a few seconds per night.</span>
+    </form>
+    {% if reprocess.finished %}<p class="muted small">Last run finished {{ reprocess.finished.replace('T', ' ') }}: {{ reprocess.done }} nights{% if reprocess.errors %}, {{ reprocess.errors|length }} failed ({{ reprocess.errors|join('; ') }}){% endif %}.</p>{% endif %}
+  {% endif %}
+</section>
+{% endif %}
 {% if nights %}
 <section class="card">
   <div class="tablewrap">

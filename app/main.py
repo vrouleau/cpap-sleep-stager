@@ -275,6 +275,59 @@ def reports(request: Request):
 
 NIGHTS_PER_PAGE = 30
 
+# ------------------------------------------------------------- re-analyse all nights
+# After an app update (new arousal causes, wake-up analysis...) existing nights only get
+# the new numbers once re-analysed. Runs in the background, oldest night first (so a
+# CPAP clock correction can carry forward), each night with the settings it had.
+_REPROCESS = {"running": False, "done": 0, "total": 0, "errors": [], "finished": None}
+
+
+def _reprocess_all(dayfirst: bool) -> None:
+    with SessionLocal() as db:
+        rows = [(n.id, n.night_date.isoformat(), n.engine or "", n.cpap_offset_s or 0.0, n.age, n.gender)
+                for n in db.query(Night).order_by(Night.night_date)]
+    _REPROCESS.update(running=True, done=0, total=len(rows), errors=[], finished=None)
+    try:
+        for nid, d, eng, off, age, gender in rows:
+            try:
+                pipeline.reprocess(nid, pipeline.ProcessOptions(
+                    engine="sleepecg" if "sleepecg" in eng else "heuristic", cpap_offset_s=off,
+                    dayfirst=dayfirst, age=age, gender=gender))
+            except Exception as exc:  # noqa: BLE001 - keep going, report at the end
+                logging.exception("Re-analysis failed for %s", d)
+                _REPROCESS["errors"].append(f"{d}: {exc}")
+            _REPROCESS["done"] += 1
+    finally:
+        _REPROCESS.update(running=False, finished=datetime.now().isoformat(timespec="seconds"))
+
+
+def start_reprocess_all(dayfirst: bool = False, background: bool = True) -> bool:
+    if _REPROCESS["running"]:
+        return False
+    _REPROCESS["running"] = True
+    if background:
+        import threading
+        threading.Thread(target=_reprocess_all, args=(dayfirst,), name="reprocess-all", daemon=True).start()
+    else:
+        _reprocess_all(dayfirst)
+    return True
+
+
+@app.post("/nights/reprocess-all")
+def reprocess_all_form(dayfirst: bool = Form(False)):
+    start_reprocess_all(dayfirst)
+    return RedirectResponse("/nights", status_code=303)
+
+
+@app.get("/api/reprocess-all")
+def api_reprocess_all_status():
+    return dict(_REPROCESS)
+
+
+@app.post("/api/reprocess-all")
+def api_reprocess_all(dayfirst: bool = False):
+    return {"started": start_reprocess_all(dayfirst), **_REPROCESS}
+
 
 def _pager(page: int, pages: int) -> list[int | None]:
     """Page numbers to show: first, last, and two either side of the current one
@@ -300,7 +353,8 @@ def nights_page(request: Request, page: int = 1):
     first = (page - 1) * NIGHTS_PER_PAGE + 1 if total else 0
     return templates.TemplateResponse(request, "nights.html", {
         "active": "nights", "nights": rows, "total": total, "page": page, "pages": pages,
-        "first": first, "last": first + len(rows) - 1, "pager": _pager(page, pages)})
+        "first": first, "last": first + len(rows) - 1, "pager": _pager(page, pages),
+        "reprocess": dict(_REPROCESS)})
 
 
 @app.get("/import", response_class=HTMLResponse)
