@@ -33,7 +33,8 @@
 
   <div class="tiles">
     <div class="tile"><b>{{ s.tst_min|hm }}</b><span>asleep · {{ s.sleep_efficiency or '–' }}% eff.</span></div>
-    <div class="tile awake"><b>{{ s.awake_min|hm }}</b><span>awake · WASO {{ s.waso_min|hm }}{% if s.arousals is defined %} · {{ s.arousals }} arousal{{ 's' if s.arousals != 1 }} ({{ s.arousal_index }}/h){% endif %}</span></div>
+    <div class="tile awake"><b>{{ s.awake_min|hm }}</b><span>awake · WASO {{ s.waso_min|hm }}{% if s.arousals is defined %} · {{ s.arousals }} arousal{{ 's' if s.arousals != 1 }} ({{ s.arousal_index }}/h){% endif %}
+      {% if s.arousals_by_cause is defined and s.arousals %}{% set c = s.arousals_by_cause %}<span class="ar-break">arousals: {{ c.respiratory }} after CPAP events · {{ c.desaturation }} after O₂ dips · {{ c.movement }} with movement · {{ c.spontaneous }} no obvious cause</span>{% endif %}</span></div>
     <div class="tile nrem"><b>{{ s.nrem_min|hm }}</b><span>NREM · {{ s.nrem_pct_tst or 0 }}% of sleep</span></div>
     <div class="tile rem"><b>{{ s.rem_min|hm }}</b><span>REM · {{ s.rem_pct_tst or 0 }}% · {{ s.rem_periods or 0 }} periods</span></div>
     {% if s.deep_min is defined %}<div class="tile deep"><b>{{ s.deep_min|hm }}</b><span>deep (est.) · {{ s.deep_pct_tst }}% of sleep · {{ s.deep_periods }} period{{ 's' if s.deep_periods != 1 }}</span></div>
@@ -97,7 +98,7 @@
 <section class="card">
   <h2>Timeline</h2>
   <div id="chart" class="chart"></div>
-  <div class="legend"><span class="sw awake"></span>Awake <span class="sw rem"></span>REM <span class="sw nrem"></span>NREM{% if s.deep_min is defined %} <span class="sw deep"></span>Deep (est.){% endif %}{% if s.arousals %} <span class="lg"><span class="sw arousal"></span>Arousal (still asleep)</span>{% endif %}
+  <div class="legend"><span class="sw awake"></span>Awake <span class="sw rem"></span>REM <span class="sw nrem"></span>NREM{% if s.deep_min is defined %} <span class="sw deep"></span>Deep (est.){% endif %}{% if s.arousals and s.arousals_by_cause is not defined %} <span class="lg"><span class="sw arousal"></span>Arousal (still asleep)</span>{% endif %}
     <span class="lg" data-ev="oa"><span class="sw oa"></span>Obstructive</span>
     <span class="lg" data-ev="ca"><span class="sw ca"></span>Central</span>
     <span class="lg" data-ev="h"><span class="sw h"></span>Hypopnea</span>
@@ -107,6 +108,12 @@
     {% if n.has_o2ring %}<span class="lg"><span class="sw desat"></span>Desat ≥4%</span>{% endif %}
     {% if n.wake_log.entries %}<span class="sw logged"></span>You: awake{% endif %}
     <label><input type="checkbox" id="toggle-events" checked> Show ResMed events</label></div>
+  {% if s.arousals and s.arousals_by_cause is defined %}<div class="legend">Arousals (still asleep):
+    <span class="lg" data-ar="respiratory"><span class="tri a-respiratory"></span>after a CPAP event</span>
+    <span class="lg" data-ar="desaturation"><span class="tri a-desaturation"></span>after an O₂ dip</span>
+    <span class="lg" data-ar="movement"><span class="tri a-movement"></span>with movement</span>
+    <span class="lg" data-ar="spontaneous"><span class="tri a-spontaneous"></span>no obvious cause</span>
+    <label><input type="checkbox" id="toggle-arousals" checked> Show arousals</label></div>{% endif %}
 </section>
 
 {% set wl = n.wake_log %}

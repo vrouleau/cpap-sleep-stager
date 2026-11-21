@@ -20,6 +20,7 @@ from app.ingest.resmed import (_RESMED_NAME, classify_resmed_file, drop_stray_se
                                load_resmed)
 from app.staging import engine as heuristic
 from app.staging import sleepecg_engine
+from app.staging import arousal as arousals_mod
 from app.staging import sync as clocksync
 from app.staging.features import EPOCH_S, build_epochs
 
@@ -157,6 +158,10 @@ def analyze(paths: list[Path], opts: ProcessOptions) -> dict:
                 events.append(dict(t=pd.Timestamp(t).to_pydatetime(),
                                    duration_s=float(ev.get("duration_s", 0) or 0),
                                    kind="Desat ≥4%", source="o2ring"))
+        # arousals: pulse surges in sleep + brief wake marks kept asleep, with a cause
+        for a in arousals_mod.detect(staged, oxi.data, events):
+            events.append(dict(t=a["t"], duration_s=a["duration_s"],
+                               kind=arousals_mod.kind_for(a["cause"]), source="arousal"))
     events.sort(key=lambda e: e["t"])
     sync = None
     if resmed and resmed.segments and oxi is not None:
@@ -237,9 +242,11 @@ def summarize(epochs: pd.DataFrame, events: list[dict], oxi: dict | None) -> dic
         s["deep_pct_tst"] = round(100 * s["deep_min"] / tst, 1)
         s["deep_periods"] = sum(1 for _, _, lb in heuristic._runs(deep) if lb)
     if "arousal" in epochs and epochs["arousal"].notna().any():
-        ar = epochs["arousal"].fillna(0).to_numpy() > 0
-        s["arousals"] = sum(1 for _, _, lb in heuristic._runs(ar) if lb)
-        s["arousal_index"] = round(s["arousals"] / (tst / 60), 1)
+        # O2Ring night: arousal events (pulse surges + brief wake marks kept asleep),
+        # each tagged with a likely cause
+        ar = [{"cause": arousals_mod.cause_of(e["kind"])} for e in events
+              if e["source"] == "arousal"]
+        s.update(arousals_mod.summarize(ar, tst))
     rem_idx = np.where(st == heuristic.REM)[0]
     s["rem_latency_min"] = round((rem_idx[0] - first) * ep_min, 1) if len(rem_idx) else None
     s["rem_periods"] = sum(1 for _, _, lb in heuristic._runs(period) if lb == heuristic.REM)

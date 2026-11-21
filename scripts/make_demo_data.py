@@ -5,7 +5,8 @@
     python scripts/make_demo_data.py demo/ --nights 5 # several nights
 
 Writes ``<out>/DATALOG/YYYYMMDD/*_BRP.edf``, ``*_EVE.edf`` and ``<out>/O2Ring_*.csv``,
-plus ``truth_*.csv`` with the stage sequence the data was generated from.
+plus ``truth_*.csv`` with the stage sequence the data was generated from and
+``truth-arousals_*.csv`` with the simulated arousals (CPAP clock).
 """
 
 from __future__ import annotations
@@ -134,6 +135,18 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
     ring0 = evening - timedelta(minutes=2)
     hr_slow = 0.0
     ev_all = [(t, d) for t, d, _ in events1 + events2]
+    # Arousals: most respiratory events end in one; plus spontaneous ones in sleep.
+    arousals = [(t + d, "respiratory", False) for t, d in ev_all if rng.random() < 0.8]
+    sleep_idx = np.where((stages == "N") | (stages == "R"))[0]
+    n_spont = int(len(sleep_idx) * EPOCH / 3600 * 5)  # ~5 per hour of sleep
+    for e in rng.choice(sleep_idx, size=n_spont, replace=False):
+        t = e * EPOCH + float(rng.uniform(3, 25))
+        if all(abs(t - (et + d)) > 90 for et, d in ev_all) and \
+                all(abs(t - m) > 120 for m in markers) and \
+                all(abs(t - a) > 60 for a, _, _ in arousals):
+            arousals.append((t, "spontaneous", bool(rng.random() < 0.3)))
+    arousals.sort()
+    surge_amp = {a: float(rng.uniform(10, 16)) for a, _, _ in arousals}
     for k in range(int((n * EPOCH + 240) / 4)):
         ts = ring0 + timedelta(seconds=4 * k)
         tt = (ts - evening).total_seconds()
@@ -145,10 +158,15 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
         for et, d in ev_all:
             if et + d + 15 < tt < et + d + 45:  # finger nadir ~30 s after event end
                 spo2 -= 4.5
-                hr += 4
+        for a, _, _ in arousals:  # pulse surge: ~5 s rise, ~12 s recovery
+            if a <= tt < a + 17:
+                x = tt - a
+                hr += surge_amp[a] * (x / 5 if x < 5 else max(0.0, 1 - (x - 5) / 12))
         motion = 0
         if any(abs(tt - m) <= 4 for m in markers):
             motion = int(rng.integers(25, 60))  # hands on the mask
+        elif any(mv and 0 <= tt - a <= 6 for a, _, mv in arousals):
+            motion = int(rng.integers(3, 15))  # arousal with a twitch
         elif s == "W" and rng.random() < 0.5:
             motion = int(rng.integers(2, 30))
         elif s == "N" and rng.random() < 0.004:
@@ -161,6 +179,9 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
     lab = {"W": "Awake", "N": "NREM", "R": "REM"}
     (out / f"truth_{day}.csv").write_text(
         "t,stage\n" + "\n".join(f"{t.isoformat()},{lab[s]}" for t, s in zip(times, stages)))
+    (out / f"truth-arousals_{day}.csv").write_text(
+        "t,cause\n" + "\n".join(f"{(evening + timedelta(seconds=a)).isoformat(timespec='seconds')},{c}"
+                                  for a, c, _ in arousals))
 
 
 def main():

@@ -73,15 +73,23 @@ function renderNight(host, d) {
           const r = el('rect', { x: x(a), y: y0 + 1, width: Math.max(2, x(b) - x(a)), height: 4, class: 'logged', rx: 2 }, svg);
           el('title', {}, r).textContent = `You: awake ${w.start.slice(11, 16)}–${w.end.slice(11, 16)}`;
         }
-        // brief arousals (asleep, but a pulse blip or turning over): ticks under the Awake row
-        for (const e of ep) if (e.arousal > 0) {
+        // arousals (still asleep): triangles under the Awake row, coloured by likely cause.
+        // Nights analysed before causes existed only have the per-epoch flag: plain ticks.
+        const arLayer = el('g', { class: 'arlayer' + (showArousals ? '' : ' hidden') }, svg);
+        const arEvents = events.filter(e => e.source === 'arousal');
+        if (arEvents.length) for (const e of arEvents) {
+          const xa = x(e.t.getTime()), c = arCause(e.kind);
+          const g = el('g', { class: 'ar a-' + c }, arLayer);
+          el('path', { d: `M${xa - 4},${y0 + rh - 10} L${xa + 4},${y0 + rh - 10} L${xa},${y0 + rh - 2} Z`, class: 'artri' }, g);
+          el('title', {}, g).textContent = `Arousal ${e.t.toTimeString().slice(0, 8)}: ${AR_LABEL[c]}`;
+        } else for (const e of ep) if (e.arousal > 0) {
           const t = el('rect', { x: x(e.t.getTime()), y: y0 + rh - 9, width: Math.max(1.5, x(e.t.getTime() + epochMs) - x(e.t.getTime())),
-            height: 7, class: 'arousaltick' }, svg);
+            height: 7, class: 'arousaltick' }, arLayer);
           el('title', {}, t).textContent = `Arousal ${e.t.toTimeString().slice(0, 5)}: still asleep`;
         }
       } else {
         // SpO2 desaturations (ring): ticks along the bottom of the SpO2 panel itself
-        if (p.key === 'spo2') for (const e of events) if (e.source !== 'resmed')
+        if (p.key === 'spo2') for (const e of events) if (e.source === 'o2ring')
           el('line', { x1: x(e.t), x2: x(e.t), y1: y0 + p.h - 6, y2: y0 + p.h, class: 'desattick' }, svg);
         const vals = ep.map(e => e[p.key]).filter(v => v != null);
         let lo = p.min ?? Math.min(...vals), hi = p.max ?? Math.max(...vals);
@@ -155,7 +163,14 @@ function renderNight(host, d) {
   }
   const kinds = new Set(events.filter(e => e.source === 'resmed').map(e => evClass(e.kind)));
   document.querySelectorAll('.legend .lg[data-ev]').forEach(n => { if (!kinds.has(n.dataset.ev)) n.style.display = 'none'; });
-  let showEvents = true;
+  let showEvents = true, showArousals = true;
+  const arToggle = document.getElementById('toggle-arousals');
+  if (arToggle) arToggle.addEventListener('change', () => {
+    showArousals = arToggle.checked;
+    host.querySelector('.arlayer')?.classList.toggle('hidden', !showArousals);
+  });
+  const arCauses = new Set(events.filter(e => e.source === 'arousal').map(e => arCause(e.kind)));
+  document.querySelectorAll('.legend [data-ar]').forEach(n => { if (!arCauses.has(n.dataset.ar)) n.style.display = 'none'; });
   const toggle = document.getElementById('toggle-events');
   if (toggle) {
     if (!events.some(e => e.source === 'resmed')) {
@@ -174,6 +189,13 @@ function renderNight(host, d) {
   }
   draw();
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(draw, 150); });
+}
+
+const AR_LABEL = { respiratory: 'after a CPAP event', desaturation: 'after an O₂ dip',
+  movement: 'with movement', spontaneous: 'no obvious cause' };
+function arCause(kind) {
+  const m = /\(([a-z]+)\)/.exec(kind || '');
+  return m && AR_LABEL[m[1]] ? m[1] : 'spontaneous';
 }
 
 function evClass(kind) {

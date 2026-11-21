@@ -20,7 +20,8 @@ def _files(d: Path, kind=None):
 
 def _accuracy(demo_dir, paths):
     r = analyze(paths, ProcessOptions())
-    truth = pd.read_csv(next(demo_dir.glob("truth_*.csv")), parse_dates=["t"])
+    (truth_csv,) = demo_dir.glob("truth_*.csv")  # exactly one stage answer key
+    truth = pd.read_csv(truth_csv, parse_dates=["t"])
     m = r["epochs"].merge(truth, on="t", suffixes=("", "_true"))
     return (m.stage == m.stage_true).mean(), r
 
@@ -91,7 +92,12 @@ def test_api_roundtrip(demo_dir):
         assert c.get("/").status_code == 200
         rep = c.get("/reports")
         assert rep.status_code == 200 and "Download PDF" in rep.text and 'id="nights-data"' in rep.text
-        assert c.get(f"/nights/{nid}").status_code == 200
+        page = c.get(f"/nights/{nid}").text
+        assert "after CPAP events" in page and 'id="toggle-arousals"' in page
+        assert any(e["source"] == "arousal" and e["kind"].startswith("Arousal (")
+                   for e in d["events"])
+        tr = c.get("/")  # Sleep trends page embeds each night's summary
+        assert tr.status_code == 200 and "arousal_index_by_cause" in tr.text
         csv = c.get(f"/api/nights/{nid}/epochs.csv").text
         assert csv.startswith("time,stage")
         segs = c.get(f"/api/nights/{nid}/segments").json()
