@@ -1,8 +1,8 @@
 """What each awakening looks like: when, how long, out of which stage, and how it
 started — the question being *why* someone wakes (e.g. the 2-5 am pattern).
 
-Per awakening (a wake bout of >= 1 min between sleep onset and the final awakening,
-plus the final awakening itself):
+Per awakening (wake bouts between sleep onset and the final awakening, merged when
+separated by <= 5 min of sleep, kept when >= 5 min long; plus the final awakening):
 
 * ``onset`` — shape of the pulse in the hour before, from the O2Ring. The pulse is
   taken relative to the night's normal for the current stage (REM runs higher than
@@ -22,6 +22,9 @@ plus the final awakening itself):
   more): a pulse that is still up by then (``alert``) suggests a racing mind more than a
   brief wake-and-roll-over.
 * ``mask_off`` — the mask came off during it (CPAP nights): you probably got up.
+  ``mask_off_after_min``: how long after waking it came off (straight away = an urge or
+  a decision to get up; after lying awake a while = going "while at it"), and
+  ``back_on_awake_min``: time still awake after the mask went back on.
 
 Plus ``wake_by_hour`` (minutes awake after sleep onset, by clock hour) and the minutes
 awake between 02:00 and 05:00, so nights before and with CPAP can be compared.
@@ -38,7 +41,11 @@ from app.staging.engine import REM, WAKE, _runs
 from app.staging.features import EPOCH_S
 
 DEFAULTS = {
-    "min_wake_epochs": 2,  # a wake bout of >= 1 min counts as an awakening
+    # Wake bouts separated by <= 5 min of "sleep" are one awakening (a minute of dozing
+    # inside a long wake is not two wake-ups), and only awakenings of >= 5 min are listed:
+    # shorter ones are rarely remembered; they are counted as brief wakes instead.
+    "merge_gap_epochs": 10,
+    "min_wake_epochs": 10,
     "gradual_rise_bpm": 3.0,  # last 5 min vs. 30-60 min before
     "abrupt_jump_bpm": 8.0,  # peak around onset vs. the 5 min before
     "alert_after_bpm": 6.0,  # pulse while awake vs. the hour before
@@ -90,9 +97,14 @@ def detect(epochs: pd.DataFrame, oxi: pd.DataFrame | None, events: list[dict],
         if "flow_present" in epochs and epochs["flow_present"].notna().any() else None
     ev = [((pd.Timestamp(e["t"]) - t0).total_seconds(), e) for e in events]
 
-    bouts = [(s, e, "night") for s, e, lb in _runs(st[first:last + 1])
-             if lb == WAKE and e - s >= p["min_wake_epochs"]]
-    bouts = [(s + first, e + first, k) for s, e, k in bouts]
+    raw = [(s + first, e + first) for s, e, lb in _runs(st[first:last + 1]) if lb == WAKE]
+    merged: list[list[int]] = []
+    for s, e in raw:
+        if merged and s - merged[-1][1] <= p["merge_gap_epochs"]:
+            merged[-1][1] = e
+        else:
+            merged.append([s, e])
+    bouts = [(s, e, "night") for s, e in merged if e - s >= p["min_wake_epochs"]]
     if last + 1 < len(st):
         bouts.append((last + 1, len(st), "final"))
 
@@ -150,8 +162,27 @@ def detect(epochs: pd.DataFrame, oxi: pd.DataFrame | None, events: list[dict],
                 before.add("movement")
         w["before"] = sorted(before)
         w["mask_off"] = bool(np.nansum(flow[s:e] == 0) > 0) if flow is not None and kind == "night" else None
+        w["awake_min"] = round(float((st[s:e] == WAKE).sum()) * EPOCH_S / 60, 1)
+        w["mask_off_after_min"] = w["back_on_awake_min"] = None
+        if w["mask_off"]:
+            off = s + int(np.argmax(flow[s:e] == 0))
+            on_again = off
+            while on_again < e and flow[on_again] == 0:
+                on_again += 1
+            w["mask_off_after_min"] = round((off - s) * EPOCH_S / 60, 1)
+            w["back_on_awake_min"] = round(float((st[on_again:e] == WAKE).sum()) * EPOCH_S / 60, 1)
         out.append(w)
     return out
+
+
+def _brief_wakes(st: np.ndarray, max_epochs: int = DEFAULTS["min_wake_epochs"]) -> int:
+    """Wake marks of 1 to < 5 min inside the night (not listed as awakenings)."""
+    sleep = st != WAKE
+    if not sleep.any():
+        return 0
+    first = int(np.argmax(sleep))
+    last = int(len(sleep) - 1 - np.argmax(sleep[::-1]))
+    return sum(1 for a, b, lb in _runs(st[first:last + 1]) if lb == WAKE and 2 <= b - a < max_epochs)
 
 
 def summarize(epochs: pd.DataFrame, wakeups: list[dict]) -> dict:
@@ -171,6 +202,7 @@ def summarize(epochs: pd.DataFrame, wakeups: list[dict]) -> dict:
         lo, hi = EARLY_HOURS
         s["wake_2to5_min"] = round(float((waso & (hours >= lo) & (hours < hi)).sum()) * EPOCH_S / 60, 1)
     night = [w for w in wakeups if w["kind"] == "night"]
+    s["brief_wakes"] = _brief_wakes(st)
     s["wakeups"] = [{**{k: v for k, v in w.items() if k != "t"},
                      "t": w["t"].isoformat(timespec="seconds")} for w in wakeups]
     s["wakeups_night"] = len(night)

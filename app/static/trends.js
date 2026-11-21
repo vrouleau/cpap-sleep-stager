@@ -346,7 +346,7 @@
     const one = (v, d = 1) => (v === null ? '–' : v.toFixed(d));
     const rows = [
       ['Nights', g => `${g.nights.length}`],
-      ['Wake-ups in the night', g => one(perNight(g.nights, n => n.s.wakeups_night))],
+      ['Wake-ups in the night (5 min+)', g => one(perNight(g.nights, n => n.s.wakeups_night))],
       ['…of which between 2 and 5 am', g => one(perNight(g.nights, n => n.s.wakeups_2to5))],
       ['Minutes awake, 2–5 am', g => one(perNight(g.nights, n => n.s.wake_2to5_min), 0)],
       ['Minutes awake after sleep onset', g => one(perNight(g.nights, n => n.s.waso_min), 0)],
@@ -354,6 +354,7 @@
       ['Onset: gradual pulse climb', g => { const w = sum(g.nights, 'wakeups_gradual') + sum(g.nights, 'wakeups_abrupt') + sum(g.nights, 'wakeups_quiet'); return pct(sum(g.nights, 'wakeups_gradual'), w); }],
       ['Onset: abrupt jump', g => { const w = sum(g.nights, 'wakeups_gradual') + sum(g.nights, 'wakeups_abrupt') + sum(g.nights, 'wakeups_quiet'); return pct(sum(g.nights, 'wakeups_abrupt'), w); }],
       ['Onset: no clear change', g => { const w = sum(g.nights, 'wakeups_gradual') + sum(g.nights, 'wakeups_abrupt') + sum(g.nights, 'wakeups_quiet'); return pct(sum(g.nights, 'wakeups_quiet'), w); }],
+      ['Brief wakes (1–5 min)', g => one(perNight(g.nights, n => n.s.brief_wakes))],
       ['Woke out of / right after REM', g => pct(sum(g.nights, 'wakeups_from_rem'), sum(g.nights, 'wakeups_night'))],
       ['Pulse still up 2–5 min into it', g => pct(sum(g.nights, 'wakeups_alert'), sum(g.nights, 'wakeups_night'))],
     ];

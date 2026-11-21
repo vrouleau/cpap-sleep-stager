@@ -370,6 +370,25 @@ def import_page(request: Request, imported: int | None = None):
         "sleepecg_status": sleepecg_engine.status()})
 
 
+@app.post("/settings/sleepecg")
+def sleepecg_setting_form(request: Request, enabled: bool = Form(False)):
+    sleepecg_engine.set_enabled(enabled)
+    back = request.headers.get("referer") or "/import"
+    return RedirectResponse(back if back.startswith(str(request.base_url)) else "/import", status_code=303)
+
+
+@app.get("/api/settings")
+def api_settings():
+    return {"sleepecg": sleepecg_engine.status()}
+
+
+@app.put("/api/settings")
+def api_settings_put(body: dict):
+    if "sleepecg" in body:
+        sleepecg_engine.set_enabled(bool(body["sleepecg"]))
+    return {"sleepecg": sleepecg_engine.status()}
+
+
 @app.post("/upload")
 async def upload_form(files: list[UploadFile] = File(...), engine: str = Form("auto"),
                       offset: float = Form(0.0), dayfirst: bool = Form(False),

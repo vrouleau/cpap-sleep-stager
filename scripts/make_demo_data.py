@@ -31,7 +31,7 @@ def hypnogram(rng, n_epochs: int) -> np.ndarray:
         st += ["N"] * int(rng.integers(120, 150) - cycle * 15)
         st += ["R"] * int(10 + cycle * 10 + rng.integers(0, 8))
         if rng.random() < 0.5:
-            st += ["W"] * int(rng.integers(2, 8))
+            st += ["W"] * int(rng.integers(10, 24))  # 5-12 min awake between cycles
         cycle += 1
     st = st[: n_epochs - 20]
     st += ["W"] * (n_epochs - len(st))  # wake up at the end; also pads a short last cycle

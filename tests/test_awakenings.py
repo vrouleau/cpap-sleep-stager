@@ -85,3 +85,32 @@ def test_reanalyse_all_nights(demo_dir):
         assert "Re-analyse all nights" in c.get("/nights").text
         assert "wake_by_hour" in c.get("/").text
         c.delete(f"/api/nights/{nid}")
+
+
+def _epochs(stages, flow=None):
+    from datetime import datetime, timedelta
+    t0 = datetime(2026, 11, 1, 23, 0)
+    return pd.DataFrame({"t": [t0 + timedelta(seconds=30 * i) for i in range(len(stages))],
+                         "stage": stages,
+                         "flow_present": flow if flow is not None else [float("nan")] * len(stages)})
+
+
+def test_wake_bouts_merge_and_short_ones_are_brief():
+    N, W = "NREM", "Awake"
+    # 40 sleep, 30 awake, 2 sleep (1 min dozing), 40 awake, 60 sleep, 4 awake (2 min), 60 sleep
+    st = [N] * 40 + [W] * 30 + [N] * 2 + [W] * 40 + [N] * 60 + [W] * 4 + [N] * 60
+    ws = [w for w in awakenings.detect(_epochs(st), None, []) if w["kind"] == "night"]
+    assert len(ws) == 1  # the 1-min doze does not split it; the 2-min wake is too short
+    assert ws[0]["minutes"] == 36.0 and ws[0]["awake_min"] == 35.0
+    s = awakenings.summarize(_epochs(st), ws)
+    assert s["wakeups_night"] == 1 and s["brief_wakes"] == 1
+
+
+def test_bathroom_timing():
+    N, W = "NREM", "Awake"
+    # wake at 40, mask off 6 min later (12 epochs) for 4 min, then 10 min awake, then sleep
+    st = [N] * 40 + [W] * (12 + 8 + 20) + [N] * 60
+    flow = [1.0] * 52 + [0.0] * 8 + [1.0] * 80
+    (w,) = [w for w in awakenings.detect(_epochs(st, flow), None, []) if w["kind"] == "night"]
+    assert w["mask_off"] is True
+    assert w["mask_off_after_min"] == 6.0 and w["back_on_awake_min"] == 10.0

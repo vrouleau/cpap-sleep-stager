@@ -63,7 +63,7 @@ The timeline stacks the stages (with *Deep* as its own row on O2Ring nights) ove
 
 Below the timeline are tiles (time asleep, awake, NREM/REM/deep, REM latency, AHI, ODI, pulse, breathing rate), the CPAP clock check (see below), a stage-by-stage table, the ResMed event list and a *Re-run* form. *Epochs CSV* and *JSON* export everything.
 
-**Wake-ups.** One row per awakening of a minute or more, plus the final one. It shows when it happened, how long it lasted, and which stage it came out of (and whether REM was in the 5 minutes before). It also shows what happened in the 2 minutes before (CPAP event, O₂ dip, movement), whether the mask came off (you probably got up), and **how it started**, read from the O2Ring pulse:
+**Wake-ups.** One row per awakening of 5 minutes or more, plus the final one. Wake marks separated by less than 5 minutes of "sleep" count as one awakening, because a minute of dozing inside a long wake isn't two wake-ups. Shorter wakes are counted as *brief* in the header. It shows when it happened, how long it lasted, and which stage it came out of (and whether REM was in the 5 minutes before). It also shows what happened in the 2 minutes before (CPAP event, O₂ dip, movement), whether the mask came off and how long after waking (straight away suggests the urge or the decision to get up came first; after lying awake a while suggests going "while at it"), how long you stayed awake after it went back on, and **how it started**, read from the O2Ring pulse:
 
 * *gradual:* the pulse had been climbing for 30–60 min (≥ 3 bpm). That's a slow internal build-up. The body clock's early-morning rise (cortisol, adrenaline), a filling bladder or a blood-sugar dip can all look like this. The pulse can't tell them apart, and it doesn't measure cortisol.
 * *abrupt:* flat, then a jump of ≥ 8 bpm at waking, so something woke you (noise, pain, a breathing event, a partner).
@@ -141,7 +141,7 @@ All thresholds are relative to the night itself (robust z-scores), so the rules 
 
 ### Optional: `sleepecg` engine
 
-[`sleepecg`](https://github.com/cbrnr/sleepecg)'s `wrn-gru-mesa` model (wake/REM/NREM) can serve as a prior. The respiratory and motion evidence is then fused on top. The catch is that sleepecg was trained on ECG R-peaks, and the O2Ring only exports a smoothed pulse rate. Here beat times are rebuilt by integrating that pulse rate, which keeps heart-rate level and slow variability but loses true beat-to-beat HRV. Treat it as an experiment and compare it against the heuristic on your own nights. It's included in the image. To use it, set `SLEEPECG: "true"` under `environment:` in `docker-compose.yml` and restart. It then appears in the engine picker, and new imports use it by default. You can still pick the heuristic per import, and re-run any night with either engine. `"false"` (the default) hides it. `GET /api/health` reports `sleepecg_status`. To build a slimmer image without it, use `docker compose build --build-arg WITH_SLEEPECG=false`. Age and sex are model inputs, and you can set them on upload.
+[`sleepecg`](https://github.com/cbrnr/sleepecg)'s `wrn-gru-mesa` model (wake/REM/NREM) can serve as a prior. The respiratory and motion evidence is then fused on top. The catch is that sleepecg was trained on ECG R-peaks, and the O2Ring only exports a smoothed pulse rate. Here beat times are rebuilt by integrating that pulse rate, which keeps heart-rate level and slow variability but loses true beat-to-beat HRV. Treat it as an experiment and compare it against the heuristic on your own nights. It's included in the image. To use it, tick **Use the sleepecg engine** on the *Data import* page. The switch is saved in the data folder (`settings.json`) and survives restarts. `SLEEPECG: "true"` under `environment:` in `docker-compose.yml` only sets the default until the switch is first used. It then appears in the engine picker, and new imports use it by default. You can still pick the heuristic per import, and re-run any night with either engine. `"false"` (the default) hides it. `GET /api/health` reports `sleepecg_status`. To build a slimmer image without it, use `docker compose build --build-arg WITH_SLEEPECG=false`. Age and sex are model inputs, and you can set them on upload.
 
 ## API
 
@@ -156,6 +156,8 @@ POST   /api/nights/{id}/wake-log           {"start": "01:30", "end": "05:15"} (b
 DELETE /api/nights/{id}/wake-log/{index}
 DELETE /api/nights/{id}
 POST   /api/reprocess-all?dayfirst=false   re-analyse every night in the background
+GET    /api/settings                       {"sleepecg": {enabled, installed, available, status, source}}
+PUT    /api/settings                       {"sleepecg": true}
 GET    /api/reprocess-all                  progress: running, done, total, errors
 ```
 
