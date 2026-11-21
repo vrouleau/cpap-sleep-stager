@@ -1,6 +1,6 @@
 services:
   sleep-stager:
-    # Prebuilt image from GitHub (Intel and ARM). Update with:
+    # Prebuilt image from GitHub (Intel/AMD, linux/amd64). Update with:
     #   docker compose pull && docker compose up -d
     # Tags: latest (newest release), 0.2.0 (a fixed release), edge (current main).
     image: ghcr.io/vrouleau/cpap-sleep-stager:latest
