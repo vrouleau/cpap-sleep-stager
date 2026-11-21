@@ -1,7 +1,8 @@
 name: Images
 
-# main      -> ghcr.io/<repo>:edge            (and :edge-sleepecg)
-# tag vX.Y.Z -> :X.Y.Z, :X.Y, :latest        (and the -sleepecg variants) + a GitHub Release
+# main      -> ghcr.io/<repo>:edge
+# tag vX.Y.Z -> :X.Y.Z, :X.Y, :latest + a GitHub Release
+# (the optional sleepecg engine is a runtime switch, SLEEPECG=true, not an image variant)
 on:
   push:
     branches: [main]
@@ -33,10 +34,6 @@ jobs:
             suffix: ""
             sleepecg: "false"
             platforms: linux/amd64,linux/arm64  # Intel and ARM NAS models
-          - variant: sleepecg
-            suffix: "-sleepecg"
-            sleepecg: "true"
-            platforms: linux/amd64  # keras/jax under ARM emulation is too slow to build
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -87,4 +84,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "$GITHUB_REF_NAME" --generate-notes \
-            --notes "Docker images: \`$IMAGE:${GITHUB_REF_NAME#v}\` (or \`:latest\`), \`$IMAGE:${GITHUB_REF_NAME#v}-sleepecg\`"
+            --notes "Docker image: \`$IMAGE:${GITHUB_REF_NAME#v}\` (or \`:latest\`). Optional sleepecg engine: set \`SLEEPECG=true\`."

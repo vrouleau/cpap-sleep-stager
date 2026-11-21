@@ -8,7 +8,7 @@
 #   scripts/release.sh patch --yes      # don't ask for confirmation
 #
 # Pushing the tag starts the "Images" workflow on GitHub: it runs the tests, publishes
-# ghcr.io/<repo>:X.Y.Z, :X.Y and :latest (and -sleepecg), then creates the GitHub
+# ghcr.io/<repo>:X.Y.Z, :X.Y and :latest, then creates the GitHub
 # Release with notes generated from the commits. This script only checks and tags.
 set -euo pipefail
 

@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+# sleepecg is normally switched on at runtime (SLEEPECG=true installs it into /data on
+# first start). WITH_SLEEPECG=true bakes it into the image instead, e.g. for offline use.
 ARG WITH_SLEEPECG=false
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     DATA_DIR=/data KERAS_BACKEND=jax PIP_NO_CACHE_DIR=1
