@@ -118,23 +118,27 @@
 
 {% if s.wakeups %}
 <section class="card">
-  <h2>Wake-ups <span class="muted small">{{ s.wakeups_night }} in the night{% if s.wakeups_2to5 %} · {{ s.wakeups_2to5 }} between 2 and 5 am{% endif %}</span></h2>
-  <p class="muted small">How each awakening started, from the O2Ring pulse (relative to tonight's normal for the stage). <b>Gradual</b>: the pulse had been climbing for 30–60 min before. That's a slow internal build-up, which a body-clock rise (cortisol, adrenaline), a filling bladder or a blood-sugar dip can all cause. The pulse can't tell those apart or measure cortisol. <b>Abrupt</b>: flat, then a jump at waking, so something woke you. <b>Quiet</b>: no clear pulse change. "Stayed up": 2–5 min into a longer wake-up the pulse was still high, as with a racing mind.</p>
+  <h2>Wake-ups <span class="muted small">{{ s.wakeups_night }} in the night{% if s.wakeups_2to5 %} · {{ s.wakeups_2to5 }} between 2 and 5 am{% endif %}{% if s.brief_wakes %} · plus {{ s.brief_wakes }} brief (1–5 min){% endif %}</span></h2>
+  <p class="muted small">Awakenings of 5 min or more; wake marks separated by less than 5 min of sleep count as one.
+    <b>Pulse before</b>: whether the O2Ring pulse had been building up over the 30–60 min before (relative to tonight's normal for the stage). A build-up is a slow internal change: the body clock (cortisol, adrenaline), a filling bladder or a blood-sugar dip can all cause it, and the pulse can't tell them apart. The jump at the moment of waking is shown for information only: waking itself raises the pulse.
+    <b>Just before</b>: CPAP events, O₂ dips and movement in the 2 min before, and from the machine data (PLD): a pressure rise, flow limitation or snoring from 10 min before the scored start to 25 min into it (they mean you were still asleep, and slow wake-ups are often scored early), and large leak in the 10 min before.
+    "Stayed up": 2–5 min into a longer wake-up the pulse was still high, as with a racing mind.</p>
   <div class="tablewrap">
   <table class="segs wake-table">
-    <thead><tr><th>Time</th><th>Lasted</th><th>Out of</th><th>How it started</th><th>Just before</th><th>Afterwards</th><th>Mask</th></tr></thead>
+    <thead><tr><th>Time</th><th>Lasted</th><th>Out of</th><th>Pulse before</th><th>Just before</th><th>Afterwards</th><th>Bathroom</th></tr></thead>
     <tbody>
     {% for w in s.wakeups %}
       <tr>
         <td>{{ w.t[11:16] }}{% if w.kind == 'final' %} <span class="tag ghost">final</span>{% endif %}</td>
-        <td>{{ w.minutes|hm if w.minutes >= 1 else '<1 min' }}</td>
+        <td>{{ w.minutes|hm if w.minutes >= 1 else '<1 min' }}{% if w.awake_min is defined and w.awake_min < w.minutes - 0.9 %}<br><span class="muted small">{{ w.awake_min|hm }} awake</span>{% endif %}</td>
         <td>{% if w.stage_before %}<span class="pill {{ w.stage_before|lower }}">{{ w.stage_before }}</span>{% endif %}{% if w.from_rem and w.stage_before != 'REM' %} <span class="muted small">after REM</span>{% endif %}</td>
-        <td>{% if w.onset %}<span class="onset {{ w.onset }}">{{ w.onset }}</span>
-          <span class="muted small">{% if w.rise_before is not none %}{{ '%+.0f'|format(w.rise_before) }} bpm over the hour{% endif %}{% if w.jump_at_wake is not none %} · jump {{ '%+.0f'|format(w.jump_at_wake) }}{% endif %}</span>
-          {% else %}<span class="muted">no pulse</span>{% endif %}</td>
+        <td>{% if w.onset == 'gradual' %}<span class="onset gradual">built up</span> <span class="muted small">{{ '%+.0f'|format(w.rise_before) }} bpm over the hour</span>
+          {% elif w.onset %}<span class="onset none">no build-up</span>{% if w.rise_before is not none %} <span class="muted small">{{ '%+.0f'|format(w.rise_before) }} bpm</span>{% endif %}
+          {% else %}<span class="muted">no pulse</span>{% endif %}
+          {% if w.jump_at_wake is not none %}<br><span class="muted small">then {{ '%+.0f'|format(w.jump_at_wake) }} on waking</span>{% endif %}</td>
         <td>{{ w.before|join(', ') if w.before else '–' }}</td>
         <td>{% if w.pulse_after is not none %}{% if w.alert %}<b>stayed up</b> {% endif %}<span class="muted small">{{ '%+.0f'|format(w.pulse_after) }} bpm</span>{% else %}–{% endif %}</td>
-        <td>{{ 'off' if w.mask_off else ('on' if w.mask_off is not none else '–') }}</td>
+        <td>{% if w.mask_off %}mask off after {{ w.mask_off_after_min|hm if w.mask_off_after_min >= 1 else '<1 min' }}{% if w.back_on_awake_min is not none %}<br><span class="muted small">then awake {{ w.back_on_awake_min|hm if w.back_on_awake_min >= 1 else '<1 min' }}</span>{% endif %}{% elif w.mask_off is not none %}<span class="muted">stayed on</span>{% else %}–{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -202,7 +206,7 @@
       <label>Engine
         <select name="engine">
           <option value="heuristic" {% if n.engine == 'heuristic' %}selected{% endif %}>Heuristic</option>
-          <option value="sleepecg" {% if not sleepecg %}disabled{% endif %} {% if 'sleepecg' in n.engine %}selected{% endif %}>sleepecg + resp{% if not sleepecg %} ({{ 'not in this image' if sleepecg_status is defined and sleepecg_status.status == 'missing' else 'off: set SLEEPECG=true' }}){% endif %}</option>
+          <option value="sleepecg" {% if not sleepecg %}disabled{% endif %} {% if 'sleepecg' in n.engine %}selected{% endif %}>sleepecg + resp{% if not sleepecg %} ({{ 'not in this image' if sleepecg_status is defined and sleepecg_status.status == 'missing' else 'off: switch it on under Data import' }}){% endif %}</option>
         </select></label>
       <label>CPAP clock correction (s) <input type="number" name="offset" value="{{ n.cpap_offset_s|int }}"
              title="Added to ResMed timestamps. -3600 = machine still on summer time"></label>

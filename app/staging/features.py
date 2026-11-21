@@ -96,6 +96,24 @@ def build_epochs(resmed: ResmedNight | None, oxi: OximetryNight | None) -> pd.Da
     for k, v in cols.items():
         df[k] = v
 
+    # ---------------- machine data (ResMed PLD, every 2 s) ----------------
+    # what the machine did and saw: therapy pressure and leak (median per epoch), flow
+    # limitation and snoring (max per epoch)
+    for k in ("pressure", "leak", "flow_lim", "snore"):
+        df[k] = np.nan
+    if resmed and resmed.pld:
+        acc: dict[str, list[pd.Series]] = {}
+        for q in resmed.pld:
+            off = (q.start - t0).total_seconds()
+            for k, v in q.channels.items():
+                ep = ((off + np.arange(len(v)) / q.fs) // EPOCH_S).astype(int)
+                ok = (ep >= 0) & (ep < n) & np.isfinite(v)
+                acc.setdefault(k, []).append(pd.Series(v[ok], index=ep[ok]))
+        for k, parts in acc.items():
+            ser = pd.concat(parts)
+            agg = ser.groupby(level=0).max() if k in ("flow_lim", "snore") else ser.groupby(level=0).median()
+            df.loc[agg.index, k] = agg.to_numpy()
+
     # ---------------- oximetry (O2Ring) ----------------
     for k in ("hr", "hr_std", "spo2", "spo2_min", "motion"):
         df[k] = np.nan

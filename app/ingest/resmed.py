@@ -5,11 +5,11 @@ files per mask-on session::
 
     20261119_231502_BRP.edf   high-rate flow + pressure (25 Hz)   <- what we stage from
     20261119_231502_EVE.edf   EDF+ annotations: apneas, hypopneas, RERAs ...
-    20261119_231502_PLD.edf   low-rate leak / minute vent / resp rate (2 s)
+    20261119_231502_PLD.edf   low-rate pressure / leak / flow limitation / snore (2 s)
     20261119_231502_SAD.edf   SpO2 / pulse when a ResMed oximeter is attached
     20261119_231502_CSL.edf   Cheyne-Stokes annotations
 
-Only BRP and EVE are used here. Timestamps in the files are naive local machine time.
+BRP, EVE and PLD are used here. Timestamps in the files are naive local machine time.
 """
 
 from __future__ import annotations
@@ -53,6 +53,66 @@ class RespEvent:
 class ResmedNight:
     segments: list[FlowSegment] = field(default_factory=list)
     events: list[RespEvent] = field(default_factory=list)
+    pld: list["PldSegment"] = field(default_factory=list)
+
+
+@dataclass
+class PldSegment:
+    """Low-rate machine data from a PLD file (one sample every 2 s): what the machine
+    did (pressure) and what it saw (leak, flow limitation, snoring)."""
+
+    source: str
+    start: datetime
+    fs: float
+    channels: dict[str, np.ndarray]  # pressure (cmH2O), leak (L/min), flow_lim (0-1), snore
+
+    @property
+    def end(self) -> datetime:
+        n = max((len(v) for v in self.channels.values()), default=0)
+        return self.start + timedelta(seconds=n / self.fs) if self.fs else self.start
+
+
+# Channel names differ between models (S9: "Therapy Pres", "FFL Index"; AirSense 10/11:
+# "Press.2s", "FlowLim.2s", ...), so match by keyword. Order matters: first match wins.
+_PLD_CHANNELS = {
+    "pressure": ("therapy pres", "press.", "press"),
+    "leak": ("leak",),
+    "flow_lim": ("flowlim", "flow lim", "ffl"),
+    "snore": ("snore",),
+}
+_PLD_EXCLUDE = {"pressure": ("mask", "epr", "exp")}  # mask / expiratory pressure are not it
+
+
+def read_pld(path: Path) -> PldSegment:
+    import pyedflib
+
+    path = Path(path)
+    f = pyedflib.EdfReader(str(path), check_file_size=pyedflib.REPAIR_FILE_SIZE_IF_WRONG)
+    try:
+        labels = [lb.strip() for lb in f.getSignalLabels()]
+        start = f.getStartdatetime()
+        chans, fs = {}, None
+        for key, words in _PLD_CHANNELS.items():
+            idx = None
+            for w in words:
+                idx = next((i for i, lb in enumerate(labels) if w in lb.lower()
+                            and not any(x in lb.lower() for x in _PLD_EXCLUDE.get(key, ()))), None)
+                if idx is not None:
+                    break
+            if idx is None:
+                continue
+            v = np.asarray(f.readSignal(idx), dtype=float)
+            if key == "leak":
+                dim = f.getPhysicalDimension(idx).strip().lower()
+                if "s" in dim and "min" not in dim:  # ResMed stores L/s: show L/min
+                    v = v * 60.0
+            chans[key] = v
+            fs = fs or float(f.getSampleFrequency(idx))
+    finally:
+        f.close()
+    if not chans:
+        raise ValueError(f"{path.name}: no pressure / leak channels")
+    return PldSegment(source=path.name, start=start, fs=fs or 0.5, channels=chans)
 
 
 def classify_resmed_file(path: Path) -> str | None:
@@ -272,6 +332,8 @@ def drop_stray_sessions(night: ResmedNight,
         night.segments = [s for s in night.segments if s not in b]
         night.events = [e for e in night.events
                         if not a - timedelta(seconds=60) <= e.start <= z + timedelta(seconds=60)]
+        night.pld = [q for q in night.pld
+                     if not a - timedelta(seconds=60) <= q.start <= z + timedelta(seconds=60)]
         out.append({"start": a.isoformat(), "end": z.isoformat(),
                     "minutes": round((z - a).total_seconds() / 60, 1),
                     "files": [s.source for s in b]})
@@ -287,8 +349,11 @@ def load_resmed(paths: list[Path]) -> ResmedNight:
                 night.segments.append(read_brp(p))
             elif kind == "EVE":
                 night.events.extend(read_eve(p))
+            elif kind == "PLD":
+                night.pld.append(read_pld(p))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Skipping %s: %s", p.name, exc)
     night.segments.sort(key=lambda s: s.start)
     night.events.sort(key=lambda e: e.start)
+    night.pld.sort(key=lambda s: s.start)
     return night

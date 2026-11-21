@@ -5,7 +5,8 @@ from app.staging import sleepecg_engine as se
 
 
 @pytest.fixture
-def env(monkeypatch):
+def env(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))  # no settings.json from other tests
     monkeypatch.delenv("SLEEPECG", raising=False)
     monkeypatch.delenv("WITH_SLEEPECG", raising=False)
     monkeypatch.setattr(se, "_classifier", lambda: None)
@@ -65,9 +66,40 @@ def test_pages_and_health_follow_the_switch(env):
         assert main._opts("heuristic", 0, False, None, None).engine == "heuristic"
 
         env.setenv("SLEEPECG", "false")
-        assert "off: set SLEEPECG=true" in c.get("/import").text
+        assert "off: switch it on under Data import" in c.get("/import").text
         assert main._opts("auto", 0, False, None, None).engine == "heuristic"
 
         env.setattr(se, "_installed", False)
         env.setenv("SLEEPECG", "true")
         assert "not in this image" in c.get("/import").text
+
+
+def test_switch_in_the_app_overrides_environment(env):
+    from fastapi.testclient import TestClient
+
+    from app import main
+    env.setattr(se, "_installed", True)
+    env.setattr(se, "bootstrap", lambda *a, **k: None)
+    env.setenv("SLEEPECG", "false")
+    with TestClient(main.app) as c:
+        page = c.get("/import").text
+        assert 'action="/settings/sleepecg"' in page and "Use the <b>sleepecg</b> engine" in page
+        r = c.post("/settings/sleepecg", data={"enabled": "true"}, follow_redirects=False)
+        assert r.status_code == 303
+        st = c.get("/api/settings").json()["sleepecg"]
+        assert st["enabled"] and st["available"] and st["source"] == "app"
+        assert main._opts("auto", 0, False, None, None).engine == "sleepecg"
+        c.post("/settings/sleepecg", data={}, follow_redirects=False)  # unticked = off
+        assert not c.get("/api/settings").json()["sleepecg"]["enabled"]
+        env.setenv("SLEEPECG", "true")  # the saved switch still wins over the variable
+        assert not se.wanted()
+        assert c.put("/api/settings", json={"sleepecg": True}).json()["sleepecg"]["enabled"]
+
+
+def test_switch_hidden_when_not_in_image(env):
+    from fastapi.testclient import TestClient
+
+    from app import main
+    env.setattr(se, "_installed", False)
+    with TestClient(main.app) as c:
+        assert 'action="/settings/sleepecg"' not in c.get("/import").text

@@ -68,6 +68,11 @@ class Epoch(Base):
     rem_score: Mapped[float | None] = mapped_column(Float)
     deep: Mapped[float | None] = mapped_column(Float)  # 1 = deep NREM, NaN = unknown (no ring)
     arousal: Mapped[float | None] = mapped_column(Float)  # 1 = brief arousal, still asleep
+    # ResMed PLD (machine data): therapy pressure cmH2O, leak L/min, flow limitation, snore
+    pressure: Mapped[float | None] = mapped_column(Float)
+    leak: Mapped[float | None] = mapped_column(Float)
+    flow_lim: Mapped[float | None] = mapped_column(Float)
+    snore: Mapped[float | None] = mapped_column(Float)
     night: Mapped[Night] = relationship(back_populates="epochs")
 
 
@@ -84,7 +89,7 @@ class Event(Base):
 
 EPOCH_FIELDS = ["resp_rate", "breath_cv", "amp_cv", "flow_present", "resp_events", "hr",
                 "hr_std", "spo2", "spo2_min", "motion", "wake_score", "rem_score", "deep",
-                "arousal"]
+                "arousal", "pressure", "leak", "flow_lim", "snore"]
 
 
 def init_db() -> None:
@@ -96,6 +101,6 @@ def init_db() -> None:
         if "wake_log" not in cols:
             conn.execute(text("ALTER TABLE nights ADD COLUMN wake_log JSON"))
         ecols = {c["name"] for c in inspect(engine).get_columns("epochs")}
-        for col in ("deep", "arousal"):
+        for col in ("deep", "arousal", "pressure", "leak", "flow_lim", "snore"):
             if col not in ecols:
                 conn.execute(text(f"ALTER TABLE epochs ADD COLUMN {col} FLOAT"))

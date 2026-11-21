@@ -31,7 +31,7 @@ def hypnogram(rng, n_epochs: int) -> np.ndarray:
         st += ["N"] * int(rng.integers(120, 150) - cycle * 15)
         st += ["R"] * int(10 + cycle * 10 + rng.integers(0, 8))
         if rng.random() < 0.5:
-            st += ["W"] * int(rng.integers(2, 8))
+            st += ["W"] * int(rng.integers(10, 24))  # 5-12 min awake between cycles
         cycle += 1
     st = st[: n_epochs - 20]
     st += ["W"] * (n_epochs - len(st))  # wake up at the end; also pads a short last cycle
@@ -79,6 +79,29 @@ def write_brp(path: Path, start: datetime, flow: np.ndarray) -> None:
     w.setStartdatetime(start)
     w.setDatarecordDuration(60)
     w.writeSamples([np.clip(flow, -2, 2), press])
+    w.close()
+
+
+PLD_FS = 0.5  # ResMed machine data: one sample every 2 s
+
+
+def write_pld(path: Path, start: datetime, press: np.ndarray, leak_lpm: np.ndarray,
+              flim: np.ndarray, snore: np.ndarray) -> None:
+    """AirSense-style PLD: pressures in cmH2O, leak in L/s, flow limitation / snore 0-1."""
+    n = len(press) // 30 * 30  # whole 60-s records
+    sigs = [("MaskPress.2s", "cmH2O", 0, 30, press[:n] - 0.3),
+            ("Press.2s", "cmH2O", 0, 30, press[:n]),
+            ("EprPress.2s", "cmH2O", 0, 30, press[:n] - 2.0),
+            ("Leak.2s", "L/s", 0, 2, leak_lpm[:n] / 60.0),
+            ("Snore.2s", "", 0, 5, snore[:n]),
+            ("FlowLim.2s", "", 0, 1, flim[:n])]
+    w = pyedflib.EdfWriter(str(path), len(sigs), file_type=pyedflib.FILETYPE_EDF)
+    w.setSignalHeaders([{"label": lb, "dimension": dim, "sample_frequency": PLD_FS,
+                         "physical_min": lo, "physical_max": hi,
+                         "digital_min": -32768, "digital_max": 32767} for lb, dim, lo, hi, _ in sigs])
+    w.setStartdatetime(start)
+    w.setDatarecordDuration(60)
+    w.writeSamples([np.clip(v, lo, hi) for _, _, lo, hi, v in sigs])
     w.close()
 
 
@@ -165,6 +188,41 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
             i = j
         else:
             i += 1
+    # Machine data (PLD): 8 cmH2O at rest. Before ~40% of the wake-ups the auto-CPAP
+    # raises the pressure (flow limitation first, sometimes leak); a couple of rises
+    # happen with no wake-up at all.
+    pt = np.arange(0, n * EPOCH, 1 / PLD_FS)
+    press = np.full(len(pt), 8.0)
+    leak = 6.0 + np.abs(rng.normal(0, 1, len(pt)))
+    flim = np.zeros(len(pt))
+    snore = np.zeros(len(pt))
+
+    def machine_rise(at: float, with_leak: bool):
+        up = (pt >= at - 480) & (pt < at - 120)  # ramp over 6 min, peaking 2 min before
+        press[up] += 3.0 * (pt[up] - (at - 480)) / 360
+        hold = (pt >= at - 120) & (pt < at + 300)
+        press[hold] += 3.0
+        flim[(pt >= at - 540) & (pt < at - 120)] = 0.4
+        snore[(pt >= at - 300) & (pt < at - 120)] = 0.3
+        if with_leak:
+            leak[(pt >= at - 240) & (pt < at + 60)] += 22.0
+
+    pressure_first = {}
+    for on, _ in wakeups:
+        pressure_first[on] = bool(rng.random() < 0.4)
+        if pressure_first[on]:
+            machine_rise(on, with_leak=bool(rng.random() < 0.5))
+    sleep_s = np.where(stages != "W")[0] * EPOCH
+    for t in rng.choice(sleep_s, size=6, replace=False):
+        if all(abs(t - on) > 1800 for on, _ in wakeups) and all(abs(t - m) > 900 for m in markers):
+            machine_rise(float(t), with_leak=False)  # a rise that does not wake you
+            break
+    for a, b in segs:
+        sel = (pt >= a / FS) & (pt < b / FS)
+        seg_start = evening + timedelta(seconds=a / FS)
+        write_pld(folder / f"{seg_start.strftime('%Y%m%d_%H%M%S')}_PLD.edf", seg_start,
+                  press[sel], leak[sel], flim[sel], snore[sel])
+
     for k in range(int((n * EPOCH + 240) / 4)):
         ts = ring0 + timedelta(seconds=4 * k)
         tt = (ts - evening).total_seconds()
@@ -201,8 +259,9 @@ def make_night(out: Path, evening: datetime, seed: int, ring_ahead_s: float = 0.
     (out / f"truth_{day}.csv").write_text(
         "t,stage\n" + "\n".join(f"{t.isoformat()},{lab[s]}" for t, s in zip(times, stages)))
     (out / f"truth-wakeups_{day}.csv").write_text(
-        "t,onset\n" + "\n".join(f"{(evening + timedelta(seconds=on)).isoformat(timespec='seconds')},{k}"
-                                  for on, k in wakeups))
+        "t,onset,pressure_first\n" + "\n".join(
+            f"{(evening + timedelta(seconds=on)).isoformat(timespec='seconds')},{k},{int(pressure_first[on])}"
+            for on, k in wakeups))
     (out / f"truth-arousals_{day}.csv").write_text(
         "t,cause\n" + "\n".join(f"{(evening + timedelta(seconds=a)).isoformat(timespec='seconds')},{c}"
                                   for a, c, _ in arousals))

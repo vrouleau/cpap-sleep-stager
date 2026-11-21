@@ -8,7 +8,8 @@ wake/sleep separator and a weaker REM detector than with a real ECG.
 
 The packages (keras + jax + sleepecg, ~400 MB) are baked into the Docker image. Whether
 the app uses them is a runtime switch: ``SLEEPECG=true`` offers the engine and makes it
-the default for new imports; ``SLEEPECG=false`` (the default) hides it. Build with
+the default for new imports; ``SLEEPECG=false`` (the default) hides it. The switch on
+the Data import page overrides the variable and is saved in ``DATA_DIR/settings.json``. Build with
 ``--build-arg WITH_SLEEPECG=false`` for a slimmer image without it.
 """
 
@@ -32,10 +33,49 @@ _ON = {"1", "true", "yes", "on"}
 _installed: bool | None = None  # are keras + sleepecg in this image? (checked once)
 
 
+def _settings_file() -> str:
+    return os.path.join(os.environ.get("DATA_DIR", "/data"), "settings.json")
+
+
+def _setting() -> bool | None:
+    """The on/off switch saved from the app (Data import page), if it was ever used."""
+    import json
+    try:
+        with open(_settings_file()) as f:
+            v = json.load(f).get("sleepecg")
+        return v if isinstance(v, bool) else None
+    except (OSError, ValueError):
+        return None
+
+
+def set_enabled(on: bool) -> None:
+    """Switch the engine on or off from the app; saved in the data folder, so it
+    survives restarts and overrides the SLEEPECG environment variable."""
+    import json
+    path = _settings_file()
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = {}
+    data["sleepecg"] = bool(on)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+    if on:
+        bootstrap()  # load the model now so the first analysis is not slow
+
+
 def wanted() -> bool:
-    """The runtime switch: SLEEPECG=true (WITH_SLEEPECG accepted as an alias)."""
-    v = os.environ.get("SLEEPECG", os.environ.get("WITH_SLEEPECG", ""))
-    return v.strip().lower() in _ON
+    """Use the engine? The switch in the app wins; otherwise the SLEEPECG environment
+    variable (WITH_SLEEPECG accepted as an alias) sets the default."""
+    v = _setting()
+    if v is not None:
+        return v
+    env = os.environ.get("SLEEPECG", os.environ.get("WITH_SLEEPECG", ""))
+    return env.strip().lower() in _ON
 
 
 def installed() -> bool:
@@ -68,7 +108,8 @@ def status() -> dict:
     """For /api/health and the engine pickers."""
     on, have = wanted(), installed()
     st = "on" if on and have else "missing" if on else "off"
-    return {"enabled": on, "installed": have, "available": on and have, "status": st}
+    return {"enabled": on, "installed": have, "available": on and have, "status": st,
+            "source": "app" if _setting() is not None else "environment"}
 
 
 def bootstrap(background: bool = True) -> None:

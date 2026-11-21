@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 UPLOAD_ROOT = Path(DATA_DIR) / "uploads"
 APNEA_KINDS = {"Obstructive apnea", "Central apnea", "Apnea", "Hypopnea"}
 KEEP_EXT = {".edf", ".csv", ".txt"}
-KEEP_RESMED = {"BRP", "EVE"}
+KEEP_RESMED = {"BRP", "EVE", "PLD"}
 
 
 @dataclass
@@ -64,7 +64,7 @@ def extract_upload(files: list[tuple[str, bytes]], workdir: Path) -> list[Path]:
             return
         m = _RESMED_NAME.search(base)
         if m and m.group(2).upper() not in KEEP_RESMED:
-            return  # skip PLD/SAD/CSL - not used
+            return  # skip SAD/CSL/... - not used
         dest = workdir / base
         i = 1
         while dest.exists():
@@ -125,6 +125,8 @@ def analyze(paths: list[Path], opts: ProcessOptions) -> dict:
             seg.start += shift
         for ev in resmed.events:
             ev.start += shift
+        for q in resmed.pld:
+            q.start += shift
     # machine/mask tests hours away from the night would otherwise read as hours awake
     oxi = load_o2ring(csv, dayfirst=opts.dayfirst) if csv else None
     ring = [(oxi.data["time"].iloc[0].to_pydatetime(), oxi.data["time"].iloc[-1].to_pydatetime())]         if oxi is not None and not oxi.data.empty else []

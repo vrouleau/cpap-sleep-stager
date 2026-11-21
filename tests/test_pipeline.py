@@ -57,7 +57,7 @@ def test_eve_edf_plus_d(demo_dir, tmp_path):
 def test_grouping(demo_dir):
     groups = group_by_night(_files(demo_dir))
     assert len(groups) == 1
-    assert len(next(iter(groups.values()))) == 5  # 2 BRP + 2 EVE + 1 CSV
+    assert len(next(iter(groups.values()))) == 7  # 2 BRP + 2 EVE + 2 PLD + 1 CSV
 
 
 def test_combined_staging(demo_dir):
@@ -291,6 +291,6 @@ def test_second_device_added_to_existing_night(demo_dir):
         second = post(_files(demo_dir, "csv"))
         assert second["id"] == first["id"] and second["status"] == "updated (+1 file)"
         d = c.get(f"/api/nights/{first['id']}").json()
-        assert d["has_resmed"] and d["has_o2ring"] and len(d["files"]) == 5
+        assert d["has_resmed"] and d["has_o2ring"] and len(d["files"]) == 7  # BRP, EVE, PLD x2 + CSV
         assert post(_files(demo_dir, "csv"))["status"] == "skipped (already imported)"
         c.delete(f"/api/nights/{first['id']}")

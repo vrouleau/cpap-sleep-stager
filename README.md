@@ -63,13 +63,16 @@ The timeline stacks the stages (with *Deep* as its own row on O2Ring nights) ove
 
 Below the timeline are tiles (time asleep, awake, NREM/REM/deep, REM latency, AHI, ODI, pulse, breathing rate), the CPAP clock check (see below), a stage-by-stage table, the ResMed event list and a *Re-run* form. *Epochs CSV* and *JSON* export everything.
 
-**Wake-ups.** One row per awakening of a minute or more, plus the final one. It shows when it happened, how long it lasted, and which stage it came out of (and whether REM was in the 5 minutes before). It also shows what happened in the 2 minutes before (CPAP event, O₂ dip, movement), whether the mask came off (you probably got up), and **how it started**, read from the O2Ring pulse:
+**Wake-ups.** One row per awakening of 5 minutes or more, plus the final one. Wake marks separated by less than 5 minutes of "sleep" count as one awakening, because a minute of dozing inside a long wake isn't two wake-ups. Shorter wakes are counted as *brief* in the header. It shows when it happened, how long it lasted, and which stage it came out of (and whether REM was in the 5 minutes before). It also shows:
 
-* *gradual:* the pulse had been climbing for 30–60 min (≥ 3 bpm). That's a slow internal build-up. The body clock's early-morning rise (cortisol, adrenaline), a filling bladder or a blood-sugar dip can all look like this. The pulse can't tell them apart, and it doesn't measure cortisol.
-* *abrupt:* flat, then a jump of ≥ 8 bpm at waking, so something woke you (noise, pain, a breathing event, a partner).
-* *quiet:* no clear pulse change.
+* **Pulse before:** whether the O2Ring pulse had been **building up** over the 30–60 min before (≥ 3 bpm, relative to the night's normal for the stage, because REM runs higher than NREM). A build-up is a slow internal change: the body clock's early-morning rise (cortisol, adrenaline), a filling bladder or a blood-sugar dip can all look like this. The pulse can't tell them apart, and it doesn't measure cortisol. The pulse *jump* at the moment of waking is shown for information only. Waking itself raises the pulse, so it says nothing about the cause (an earlier version labelled it "abrupt").
+* **Just before:** CPAP events, O₂ dips and movement in the 2 minutes before. From the machine data (`PLD.edf`) it also shows a **pressure rise** (the auto-CPAP reacting to flow limitation or snoring), **flow limitation** or **snoring** from 10 minutes before the scored start to 25 minutes into it. Those mean you were still asleep, and slowly building wake-ups are often scored early. It shows **large leak** (≥ 24 L/min) from 10 minutes before to 2 minutes after; leak later than that usually comes from moving once awake.
+* **Afterwards:** "stayed up" means that 2–5 minutes into a longer wake-up the pulse was still high, as with a racing mind rather than a brief wake-and-roll-over.
+* **Bathroom:** whether the mask came off and how long after waking (straight away suggests the urge or the decision to get up came first; after lying awake a while suggests going "while at it"), and how long you stayed awake after it went back on.
 
-The pulse is compared with the night's normal for each stage, because REM runs a few bpm above NREM. Otherwise every wake-up out of REM would look like a climb. Scoring can place a slowly building wake-up a few minutes early, so the analysis finds the actual pulse step within 10 minutes of it. On longer wake-ups, *stayed up* means the pulse was still high 2–5 minutes in, as with a racing mind rather than a brief wake-and-roll-over. On simulated nights every wake-up was found and about 4 in 5 got the right gradual/abrupt label. Read it as a pattern over many nights, not a verdict on one.
+On simulated nights every wake-up was found, every simulated pressure rise before a wake-up was flagged with no false alarms, and the build-up label was right about 3 times in 4. Read it as a pattern over many nights, not a verdict on one.
+
+**Machine data (PLD).** The timeline also shows therapy pressure, leak and flow limitation from the ResMed `*_PLD.edf` files (one value every 2 s). Channel names differ by model (AirSense `Press.2s`, `Leak.2s`, `FlowLim.2s`, `Snore.2s`; S9 `Therapy Pres`, `FFL Index`, …) and are matched by keyword. Leak is converted from L/s to L/min. Older imports didn't keep PLD files. Re-insert the SD card (without *Replace*) and existing nights pick them up; then *Re-analyse all nights*.
 
 **Your wake log.** Log the times you remember being awake (for example *01:30 to 05:15* after the dog woke you). They show as a dark band on the timeline, and the page reports how much of that time the app also staged as awake. It is the only ground truth you have without a sleep lab. Use it to judge how far to trust a night, and as data for tuning the rules. Log entries survive re-runs and re-uploads.
 
@@ -91,7 +94,7 @@ A sleep report for a chosen period, to send to your doctor:
 ### Uploading
 
 * **Drag in whole folders**, or use *Choose folder*: the ResMed SD card (or its `DATALOG` folder) and/or O2 Insight Pro's `DATA` folder (`%LOCALAPPDATA%\O2 Insight Pro\DATA`). Loose `*_BRP.edf` / `*_EVE.edf` files, O2Ring CSVs or a zip work too.
-* The browser keeps only what the analysis uses (it skips `STR.edf`, `SETTINGS`, PLD/SAD/CSL and the rest) and shows what it found per night before uploading.
+* The browser keeps only what the analysis uses: BRP, EVE and PLD (it skips `STR.edf`, `SETTINGS`, SAD/CSL and the rest) and shows what it found per night before uploading.
 * It leaves out nights you already have unless *Replace* is ticked, so re-inserting the card only uploads the new nights.
 * Uploads go in batches, oldest night first, with progress and a per-night result list.
 * Nights are split automatically, noon to noon, and named after the evening they start.
@@ -141,7 +144,7 @@ All thresholds are relative to the night itself (robust z-scores), so the rules 
 
 ### Optional: `sleepecg` engine
 
-[`sleepecg`](https://github.com/cbrnr/sleepecg)'s `wrn-gru-mesa` model (wake/REM/NREM) can serve as a prior. The respiratory and motion evidence is then fused on top. The catch is that sleepecg was trained on ECG R-peaks, and the O2Ring only exports a smoothed pulse rate. Here beat times are rebuilt by integrating that pulse rate, which keeps heart-rate level and slow variability but loses true beat-to-beat HRV. Treat it as an experiment and compare it against the heuristic on your own nights. It's included in the image. To use it, set `SLEEPECG: "true"` under `environment:` in `docker-compose.yml` and restart. It then appears in the engine picker, and new imports use it by default. You can still pick the heuristic per import, and re-run any night with either engine. `"false"` (the default) hides it. `GET /api/health` reports `sleepecg_status`. To build a slimmer image without it, use `docker compose build --build-arg WITH_SLEEPECG=false`. Age and sex are model inputs, and you can set them on upload.
+[`sleepecg`](https://github.com/cbrnr/sleepecg)'s `wrn-gru-mesa` model (wake/REM/NREM) can serve as a prior. The respiratory and motion evidence is then fused on top. The catch is that sleepecg was trained on ECG R-peaks, and the O2Ring only exports a smoothed pulse rate. Here beat times are rebuilt by integrating that pulse rate, which keeps heart-rate level and slow variability but loses true beat-to-beat HRV. Treat it as an experiment and compare it against the heuristic on your own nights. It's included in the image. To use it, tick **Use the sleepecg engine** on the *Data import* page. The switch is saved in the data folder (`settings.json`) and survives restarts. `SLEEPECG: "true"` under `environment:` in `docker-compose.yml` only sets the default until the switch is first used. It then appears in the engine picker, and new imports use it by default. You can still pick the heuristic per import, and re-run any night with either engine. `"false"` (the default) hides it. `GET /api/health` reports `sleepecg_status`. To build a slimmer image without it, use `docker compose build --build-arg WITH_SLEEPECG=false`. Age and sex are model inputs, and you can set them on upload.
 
 ## API
 
@@ -156,6 +159,8 @@ POST   /api/nights/{id}/wake-log           {"start": "01:30", "end": "05:15"} (b
 DELETE /api/nights/{id}/wake-log/{index}
 DELETE /api/nights/{id}
 POST   /api/reprocess-all?dayfirst=false   re-analyse every night in the background
+GET    /api/settings                       {"sleepecg": {enabled, installed, available, status, source}}
+PUT    /api/settings                       {"sleepecg": true}
 GET    /api/reprocess-all                  progress: running, done, total, errors
 ```
 

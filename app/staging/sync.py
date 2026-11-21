@@ -217,6 +217,11 @@ def estimate(segments, events: list[dict], oxi: pd.DataFrame | None,
             out["desat_agrees"] = bool(agree)
             if not agree and out["confidence"] == "high":
                 out["confidence"] = "medium"
+            elif agree and out["confidence"] == "medium" and not anchored \
+                    and mo["markers_matched"] >= max(3, mo["markers"]):
+                # two independent methods (movement at every mask on/off, SpO2 lag after
+                # events) land within 20 s of each other: that is a high-confidence answer
+                out["confidence"] = "high"
     elif anchored:
         out["suggested_offset_s"] = int(current_offset + hour)
         out["confidence"] = "low"

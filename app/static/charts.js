@@ -40,6 +40,9 @@ function renderNight(host, d) {
   if (has('spo2')) panels.push({ key: 'spo2', h: 60, label: 'SpO₂ %', color: 'var(--line2)', min: 85, max: 100 });
   if (has('resp_rate')) panels.push({ key: 'resp_rate', h: 60, label: 'Breaths/min', color: 'var(--line3)' });
   if (has('breath_cv')) panels.push({ key: 'breath_cv', h: 60, label: 'Breath irregularity', color: 'var(--rem)' });
+  if (has('pressure')) panels.push({ key: 'pressure', h: 55, label: 'Pressure cmH₂O', color: 'var(--ev-oa)' });
+  if (has('leak')) panels.push({ key: 'leak', h: 45, label: 'Leak L/min', color: 'var(--ev-ua)', bars: true });
+  if (has('flow_lim')) panels.push({ key: 'flow_lim', h: 35, label: 'Flow limitation', color: 'var(--ev-h)', bars: true });
   if (has('motion')) panels.push({ key: 'motion', h: 45, label: 'Motion', color: 'var(--awake)', bars: true });
 
   function draw() {
@@ -154,6 +157,7 @@ function renderNight(host, d) {
       const near = events.filter(v => Math.abs(v.t - t) < 60e3).map(v => v.kind);
       tip.innerHTML = `<b>${e.t.toTimeString().slice(0, 8)}</b> <span class="pill ${e.st.toLowerCase()}">${e.st}</span><br>` +
         `HR ${f(e.hr)} · SpO₂ ${f(e.spo2)} · RR ${f(e.resp_rate, 1)}<br>irreg ${f(e.breath_cv, 2)} · motion ${f(e.motion)}` +
+        (e.pressure != null ? `<br>pressure ${f(e.pressure, 1)} · leak ${f(e.leak)} L/min · flow lim ${f(e.flow_lim, 2)}` : '') +
         (near.length ? `<br>${near.join(', ')}` : '');
       tip.style.display = 'block';
       tip.style.left = Math.min(ev.clientX - host.getBoundingClientRect().left + 12, host.clientWidth - 190) + 'px';

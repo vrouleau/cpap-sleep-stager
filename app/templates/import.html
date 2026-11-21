@@ -27,7 +27,7 @@
             <select name="engine">
               <option value="heuristic">Cardio-respiratory heuristic</option>
               <option value="sleepecg" {% if not sleepecg %}disabled{% else %}selected{% endif %}>
-                sleepecg + respiratory{% if not sleepecg %} ({{ 'not in this image' if sleepecg_status is defined and sleepecg_status.status == 'missing' else 'off: set SLEEPECG=true' }}){% endif %}</option>
+                sleepecg + respiratory{% if not sleepecg %} ({{ 'not in this image' if sleepecg_status is defined and sleepecg_status.status == 'missing' else 'off: switch it on under Data import' }}){% endif %}</option>
             </select></label>
           <label>CPAP clock correction (s)
             <input type="number" name="offset" value="0" step="1"
@@ -45,6 +45,14 @@
         <button type="button" class="btn ghost" id="clear" hidden>Clear</button>
       </div>
     </form>
+    {% if sleepecg_status.installed %}
+    <form method="post" action="/settings/sleepecg" class="engine-switch">
+      <label class="chk"><input type="checkbox" name="enabled" value="true" {% if sleepecg_status.enabled %}checked{% endif %}
+             onchange="this.form.submit()"> Use the <b>sleepecg</b> engine</label>
+      <span class="muted small">{% if sleepecg_status.enabled %}On: new imports use it by default; you can still pick the heuristic per import or per night.{% else %}Off: the cardio-respiratory heuristic is used. sleepecg is an ML model trained on ECG, fed here with the ring's pulse: an experiment to compare, not an upgrade.{% endif %}</span>
+      <noscript><button type="submit">Save</button></noscript>
+    </form>
+    {% endif %}
     <div id="progress" class="progress" hidden><div class="track"><div class="bar"></div></div><span class="label"></span></div>
     <ul id="results" class="results"></ul>
   </div>
