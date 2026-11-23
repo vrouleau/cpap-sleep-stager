@@ -284,7 +284,4 @@ svg.tchart { display: block; overflow: visible; max-width: 100%; }
 .wake-table td { vertical-align: top; }
 .reanalyse .inline-form { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; }
 .reanalyse p { margin: .2rem 0; }
-.cmp-table td:first-child { color: var(--muted); }
-.cmp-table td, .cmp-table th { text-align: right; } .cmp-table td:first-child, .cmp-table th:first-child { text-align: left; }
-svg .earlyband { fill: var(--rem); opacity: .07; }
 .engine-switch { display: flex; flex-wrap: wrap; gap: .3rem .8rem; align-items: baseline; margin-top: .8rem; padding-top: .7rem; border-top: 1px solid var(--line); }

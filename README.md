@@ -44,7 +44,7 @@ To build from source instead: clone the repo and run `docker compose up -d --bui
 
 A sidebar (a tab strip on phones) with five sections:
 
-* **Sleep trends** (home): averages for the range, then sleep stages per night (deep, light NREM, REM, awake), sleep window (falling asleep to final awakening), sleep efficiency, awake after falling asleep, arousals by likely cause, and pulse while asleep (O2Ring nights). At the end, **wake-ups before vs with CPAP** (ring-only nights vs CPAP nights in the range): minutes awake per clock hour with 2–5 am shaded, and a side-by-side table (wake-ups per night, how many between 2 and 5 am, final awakening time, how they started, out of REM, pulse still up). Set the range to *All nights* to include the weeks before CPAP.
+* **Sleep trends** (home): averages for the range, then sleep stages per night (deep, light NREM, REM, awake), sleep window (falling asleep to final awakening), sleep efficiency, awake after falling asleep, arousals by likely cause, and pulse while asleep (O2Ring nights).
 * **Nights**: every night in a table, 30 per page, newest first. Open one for its timeline. **Re-analyse all nights** reruns every night with its own engine and clock correction, oldest first, in the background, so older nights get the newest analysis.
 * **CPAP trends**: AHI by event type (obstructive, central, hypopnea, unclassified, counted only while asleep), usage with a 4 h line, mask breaks, breathing rate while asleep, and on O2Ring nights ODI 4% and lowest SpO₂.
 * **Reports**: see below.
