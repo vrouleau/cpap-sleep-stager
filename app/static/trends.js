@@ -314,65 +314,6 @@
     { key: 'ua', label: 'Apnea (unclassified)', color: css('--ev-ua') },
   ];
 
-  // ------------------------------------------------------------------ wake-ups
-  const HOURS = ['21', '22', '23', '00', '01', '02', '03', '04', '05', '06', '07', '08', '09'];
-  const perNight = (ns, f) => { const v = ns.map(f).filter(x => x !== null && x !== undefined && !Number.isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-
-  /* Grouped columns: minutes awake per clock hour, one column per group. */
-  function hourBars(host, groups) {
-    const vals = groups.map(g => HOURS.map(h => perNight(g.nights, n => n.s.wake_by_hour[h] || 0)));
-    const hi = niceMax(Math.max(2, ...vals.flat().filter(v => v !== null)));
-    const bks = HOURS.map(h => ({ label: `${h}h`, title: `${h}:00–${h}:59`, nights: [] }));
-    const fr = frame(host, bks, 0, hi, v => `${v}`);
-    const gw = Math.min(30, fr.slot * 0.8), bw = gw / groups.length;
-    groups.forEach((g, gi) => vals[gi].forEach((v, i) => {
-      if (!v) return;
-      const x = fr.x(i) - gw / 2 + gi * bw, y = fr.y(v);
-      const r = el('path', { d: colPath(x + 0.5, y, Math.max(1, bw - 1), fr.y(0) - y, true), fill: g.color, class: 'mark' }, fr.svg);
-      el('title', {}, r).textContent = `${g.label}, ${HOURS[i]}:00: ${v.toFixed(1)} min awake per night (${g.nights.length} nights)`;
-    }));
-    // shade 2-5 am
-    const a = fr.x(HOURS.indexOf('02')) - fr.slot / 2, b = fr.x(HOURS.indexOf('04')) + fr.slot / 2;
-    const band = el('rect', { x: a, y: fr.T, width: b - a, height: fr.ph, class: 'earlyband' }, fr.svg);
-    fr.svg.insertBefore(band, fr.svg.firstChild.nextSibling);
-  }
-
-  function wakeTable(host, groups) {
-    host.replaceChildren();
-    const sum = (ns, k) => ns.reduce((a, n) => a + (n.s[k] || 0), 0);
-    const pct = (num, den) => (den ? `${Math.round(100 * num / den)}%` : '–');
-    const finalMin = ns => { const v = ns.map(n => clockMin(n.s.final_wake)).filter(x => x !== null).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
-    const clock = m => { if (m === null) return '–'; const t = (m + 12 * 60) % (24 * 60); return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.round(t % 60)).padStart(2, '0')}`; };
-    const one = (v, d = 1) => (v === null ? '–' : v.toFixed(d));
-    const rows = [
-      ['Nights', g => `${g.nights.length}`],
-      ['Wake-ups in the night (5 min+)', g => one(perNight(g.nights, n => n.s.wakeups_night))],
-      ['…of which between 2 and 5 am', g => one(perNight(g.nights, n => n.s.wakeups_2to5))],
-      ['Minutes awake, 2–5 am', g => one(perNight(g.nights, n => n.s.wake_2to5_min), 0)],
-      ['Minutes awake after sleep onset', g => one(perNight(g.nights, n => n.s.waso_min), 0)],
-      ['Final awakening (median)', g => clock(finalMin(g.nights))],
-      ['Pulse built up beforehand', g => { const w = ['gradual', 'none', 'abrupt', 'quiet'].reduce((a, k) => a + sum(g.nights, `wakeups_${k}`), 0); return pct(sum(g.nights, 'wakeups_gradual'), w); }],
-      ['Something just before', g => pct(sum(g.nights, 'wakeups_triggered'), sum(g.nights, 'wakeups_night'))],
-      ['…machine raised the pressure', g => pct(sum(g.nights, 'wakeups_before_pressure_rise'), sum(g.nights, 'wakeups_night'))],
-      ['…large leak', g => pct(sum(g.nights, 'wakeups_before_leak'), sum(g.nights, 'wakeups_night'))],
-      ['…flow limitation or snoring', g => pct(g.nights.reduce((a, n) => a + Math.max(n.s.wakeups_before_flow_limitation || 0, n.s.wakeups_before_snoring || 0), 0), sum(g.nights, 'wakeups_night'))],
-      ['…CPAP event, O₂ dip or movement', g => pct(g.nights.reduce((a, n) => a + Math.max(n.s.wakeups_before_cpap_event || 0, n.s.wakeups_before_o2_dip || 0, n.s.wakeups_before_movement || 0), 0), sum(g.nights, 'wakeups_night'))],
-      ['Brief wakes (1–5 min)', g => one(perNight(g.nights, n => n.s.brief_wakes))],
-      ['Woke out of / right after REM', g => pct(sum(g.nights, 'wakeups_from_rem'), sum(g.nights, 'wakeups_night'))],
-      ['Pulse still up 2–5 min into it', g => pct(sum(g.nights, 'wakeups_alert'), sum(g.nights, 'wakeups_night'))],
-    ];
-    const t = document.createElement('table'); t.className = 'hist cmp-table';
-    const hr = t.createTHead().insertRow();
-    for (const h of ['', ...groups.map(g => g.label)]) { const th = document.createElement('th'); th.textContent = h; hr.appendChild(th); }
-    const tb = t.createTBody();
-    for (const [label, f] of rows) {
-      const r = tb.insertRow(); r.insertCell().textContent = label;
-      for (const g of groups) r.insertCell().textContent = f(g);
-    }
-    const wrap = document.createElement('div'); wrap.className = 'tablewrap'; wrap.appendChild(t);
-    host.appendChild(wrap);
-  }
-
   function card(title, sub, legend, draw) {
     const c = document.createElement('section'); c.className = 'card chart-card';
     const h = document.createElement('h2'); h.textContent = title; c.appendChild(h);
@@ -457,21 +398,6 @@
     }
     if (ring.length) cards.push(card('Pulse while asleep', 'Average pulse during sleep (O2Ring nights).', null,
       p => line(p, bks, { key: 'hr', label: 'pulse', color: css('--line1') }, F.bpm, { minSpan: 4 })));
-    // ---- wake-ups: before CPAP (O2Ring only) vs with CPAP
-    const analysed = nights.filter(n => n.s.wake_by_hour);
-    const groups = [
-      { label: 'Before CPAP', color: css('--muted'), nights: analysed.filter(n => !n.cpap) },
-      { label: 'With CPAP', color: css('--accent'), nights: analysed.filter(n => n.cpap) },
-    ].filter(g => g.nights.length);
-    if (groups.length) {
-      const note = groups.length < 2 ? ' Widen the date range to include nights both before and with CPAP to compare them.' : '';
-      cards.push(card('When you are awake, by hour',
-        'Minutes awake after first falling asleep, per clock hour, averaged per night.' + note,
-        groups, p => hourBars(p, groups)));
-      cards.push(card('Wake-ups compared',
-        'Per night, awakenings of 5 min or more. "Built up": the O2Ring pulse had been climbing for 30–60 min before (a slow internal build-up such as the body clock, a filling bladder or low blood sugar; it does not measure cortisol). "Just before": CPAP events, O₂ dips, movement (2 min), and from the machine data around waking: pressure rise, flow limitation, snoring, large leak. Machine rows need the PLD files (re-import the SD card).',
-        null, p => wakeTable(p, groups)));
-    }
     const cols = [['Asleep', cell('tst', hours)], ['Efficiency', cell('eff', F.pct.v)], ['Awake (WASO)', cell('waso', F.min.v)],
       ['Light', cell('light', hours)], ['Deep', cell('deep', hours)], ['REM', cell('rem', hours)], ['Arousals / h', cell('arousal_idx', v => v.toFixed(1))], ['after CPAP', cell('ar_respiratory', v => v.toFixed(1))], ['Pulse', cell('hr', F.bpm.v)]];
     return { tiles, cards, cols };

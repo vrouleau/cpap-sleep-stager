@@ -30,7 +30,7 @@ separated by <= 5 min of sleep, kept when >= 5 min long; plus the final awakenin
   ``back_on_awake_min``: time still awake after the mask went back on.
 
 Plus ``wake_by_hour`` (minutes awake after sleep onset, by clock hour) and the minutes
-awake between 02:00 and 05:00, so nights before and with CPAP can be compared.
+awake between 02:00 and 05:00.
 """
 
 from __future__ import annotations
@@ -241,7 +241,7 @@ def _brief_wakes(st: np.ndarray, max_epochs: int = DEFAULTS["min_wake_epochs"]) 
 
 
 def summarize(epochs: pd.DataFrame, wakeups: list[dict]) -> dict:
-    """Night-level numbers for the trend comparison."""
+    """Night-level wake-up numbers."""
     st = epochs["stage"].to_numpy()
     sleep = st != WAKE
     s: dict = {}
